@@ -34,7 +34,7 @@ fun AppNavHost(
     contentPadding: PaddingValues = PaddingValues(),
     showBottomEdgeBlur: Boolean = true,
     onNestedDetailVisibilityChanged: (Boolean) -> Unit = {},
-    startDestination: String = Destination.Foryou.name
+    startDestination: String = Destination.Favorite.name
 ) {
     val context = LocalContext.current
 
