@@ -445,7 +445,15 @@ class PlayerManagerImpl @Inject constructor(
                 mediaSourceFactory.setDrmSessionManagerProvider { drmSessionManager }
             }
         }
-        val mediaItem = MediaItem.fromUri(url)
+        val mediaItem = MediaItem.Builder()
+            .setUri(url)
+            .setLiveConfiguration(
+                MediaItem.LiveConfiguration.Builder()
+                    .setTargetOffsetMs(20_000L)
+                    .build()
+            )
+            .build()
+        val mediaSource: MediaSource = mediaSourceFactory.createMediaSource(mediaItem)
         val mediaSource: MediaSource = mediaSourceFactory.createMediaSource(mediaItem)
         val preparedPlayer = preparePlayer(
             generation = generation,
@@ -620,6 +628,12 @@ class PlayerManagerImpl @Inject constructor(
         .setMediaSourceFactory(mediaSourceFactory)
         .setRenderersFactory(renderersFactory)
         .setTrackSelector(createTrackSelector(tunneling))
+        .setLoadControl(
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(20_000, 30_000, 2_000, 6_000)
+                .setBackBuffer(0, false)
+                .build()
+        )
         .setHandleAudioBecomingNoisy(true)
         .build()
         .apply {
