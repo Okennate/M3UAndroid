@@ -102,6 +102,9 @@ import java.io.FileOutputStream
 import java.util.UUID
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.seconds
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 
 class PlayerManagerImpl @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -395,7 +398,7 @@ class PlayerManagerImpl @Inject constructor(
         val mediaExtractor = MediaExtractorCompat(extractorsFactory, dataSourceFactory)
         val mediaSourceFactory = when (mimeType) {
             MimeTypes.APPLICATION_M3U8 -> HlsMediaSource.Factory(dataSourceFactory)
-                .setAllowChunklessPreparation(false)
+                .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(8))
                 .setExtractorFactory(DefaultHlsExtractorFactory())
 
             MimeTypes.APPLICATION_SS -> ProgressiveMediaSource.Factory(
@@ -690,15 +693,20 @@ class PlayerManagerImpl @Inject constructor(
         Codecs.createRenderersFactory(context)
     }
 
-    private fun createTrackSelector(tunneling: Boolean): TrackSelector {
-        return DefaultTrackSelector(context).apply {
-            setParameters(
-                buildUponParameters()
-                    .setMaxVideoSize(Int.MAX_VALUE, 360)
-                    .setTunnelingEnabled(tunneling)
-            )
-        }
+   private fun createTrackSelector(tunneling: Boolean): TrackSelector {
+    val adaptiveFactory = AdaptiveTrackSelection.Factory(
+        20_000, 25_000, 25_000, 0.65f
+    )
+    return DefaultTrackSelector(context, adaptiveFactory).apply {
+        setParameters(
+            buildUponParameters()
+                .setMaxVideoSize(Int.MAX_VALUE, 240)
+                .setMaxVideoBitrate(300_000)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .setTunnelingEnabled(tunneling)
+        )
     }
+}
 
     private fun createHttpDataSourceFactory(
         url: String,
