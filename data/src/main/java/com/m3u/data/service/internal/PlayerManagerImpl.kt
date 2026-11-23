@@ -454,7 +454,6 @@ class PlayerManagerImpl @Inject constructor(
             )
             .build()
         val mediaSource: MediaSource = mediaSourceFactory.createMediaSource(mediaItem)
-        val mediaSource: MediaSource = mediaSourceFactory.createMediaSource(mediaItem)
         val preparedPlayer = preparePlayer(
             generation = generation,
             mediaSourceFactory = mediaSourceFactory,
