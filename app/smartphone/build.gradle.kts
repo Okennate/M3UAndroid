@@ -32,6 +32,7 @@ android {
         targetSdk = 33
         versionCode = 145
         versionName = "1.15.1"
+        ndk { abiFilters += "arm64-v8a" }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments["m3uMockServerUrl"] = m3uMockServerUrl.get()
