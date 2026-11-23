@@ -1,0 +1,44 @@
+name: Smartphone APK Only
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smartphone-only-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: zulu
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-home-cache-cleanup: true
+
+      - name: Build smartphone release APK
+        run: ./gradlew :app:smartphone:assembleRelease
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: smartphone-apk
+          if-no-files-found: error
+          retention-days: 30
+          path: app/smartphone/build/outputs/published-apk/release/*.apk
