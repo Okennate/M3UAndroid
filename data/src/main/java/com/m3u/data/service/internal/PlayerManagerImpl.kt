@@ -694,7 +694,7 @@ class PlayerManagerImpl @Inject constructor(
         return DefaultTrackSelector(context).apply {
             setParameters(
                 buildUponParameters()
-                    .setForceHighestSupportedBitrate(true)
+                    .setMaxVideoSize(Int.MAX_VALUE, 360)
                     .setTunnelingEnabled(tunneling)
             )
         }
