@@ -71,7 +71,7 @@ class FavoriteViewModel @Inject constructor(
         // Sort.MIXED
     )
 
-    private val sortIndex = MutableStateFlow(0)
+    private val sortIndex = MutableStateFlow(sorts.indexOf(Sort.ASC))
 
     val sort = sortIndex
         .map { sorts[it] }
