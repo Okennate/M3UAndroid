@@ -214,9 +214,13 @@ fun ChannelRoute(
         }
     }
 
-    LaunchedEffect(isPipMode) {
-        val interceptor: MaskInterceptor? = if (isPipMode) { _ -> false } else null
-        maskState.intercept(interceptor)
+    // Keep the controls visible while the stream is loading; hide them once it starts playing.
+    LaunchedEffect(playerState.isPlaying, isPipMode) {
+        if (playerState.isPlaying) {
+            maskState.sleep()
+        } else if (!isPipMode) {
+            maskState.wake(3600.seconds)
+        }
     }
 
     var currentPaddings: Paddings by remember { mutableStateOf(Paddings()) }
