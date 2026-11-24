@@ -361,7 +361,7 @@ fun ChannelMask(
                 )
                 Box(Modifier.size(48.dp)) {
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = !currentIsPanelExpanded && adjacentChannels?.prevId != null,
+                        visible = false,
                         enter = fadeIn() + slideInHorizontally(initialOffsetX = { -it / 6 }),
                         exit = fadeOut() + slideOutHorizontally(targetOffsetX = { -it / 6 }),
                         modifier = Modifier.fillMaxSize()
@@ -392,7 +392,7 @@ fun ChannelMask(
                 }
                 Box(Modifier.size(48.dp)) {
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = !currentIsPanelExpanded && adjacentChannels?.nextId != null,
+                        visible = false,
                         enter = fadeIn() + slideInHorizontally(initialOffsetX = { it / 6 }),
                         exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it / 6 }),
                         modifier = Modifier.fillMaxSize()
