@@ -629,7 +629,7 @@ class PlayerManagerImpl @Inject constructor(
         .setTrackSelector(createTrackSelector(tunneling))
         .setLoadControl(
             DefaultLoadControl.Builder()
-                .setBufferDurationsMs(20_000, 30_000, 2_000, 6_000)
+                .setBufferDurationsMs(10_000, 20_000, 2_000, 5_000)
                 .setBackBuffer(0, false)
                 .build()
         )
