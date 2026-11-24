@@ -14,6 +14,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
 import com.m3u.core.foundation.architecture.preferences.ThemeStyle
 import com.m3u.smartphone.ui.material.ktx.createAppColorScheme
+import androidx.compose.ui.graphics.Color
 
 val LocalThemeStyle = staticCompositionLocalOf { ThemeStyle.MATERIAL }
 
@@ -29,12 +30,27 @@ fun Theme(
 ) {
     val context = LocalContext.current
     val supportsDynamicTheming = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val colorScheme = if (useDynamicColors && supportsDynamicTheming) {
+    val baseColorScheme = if (useDynamicColors && supportsDynamicTheming) {
         if (useDarkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else {
         remember(useDarkTheme, argb, themeStyle) {
             createAppColorScheme(argb, useDarkTheme, themeStyle)
         }
+    }
+    // Pure black (AMOLED) in dark mode. Cards stay slightly lighter so they remain visible.
+    val colorScheme = if (useDarkTheme) {
+        baseColorScheme.copy(
+            background = Color.Black,
+            surface = Color.Black,
+            surfaceDim = Color.Black,
+            surfaceContainerLowest = Color.Black,
+            surfaceContainerLow = Color(0xFF0A0A0A),
+            surfaceContainer = Color(0xFF111111),
+            surfaceContainerHigh = Color(0xFF181818),
+            surfaceContainerHighest = Color(0xFF202020),
+        )
+    } else {
+        baseColorScheme
     }
     val resolvedStyle = themeStyle.takeIf { it == ThemeStyle.WARM_EDITORIAL }
         ?: ThemeStyle.MATERIAL
