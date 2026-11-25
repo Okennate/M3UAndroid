@@ -104,7 +104,7 @@ suspend operator fun <T> Settings.set(key: Preferences.Key<T>, value: T) {
 suspend fun Settings.applyThemePreference(theme: ThemePreference) {
     val normalized = theme.normalized()
     edit { preferences ->
-        preferences[PreferencesKeys.USE_DYNAMIC_COLORS] = false
+        preferences[PreferencesKeys.USE_DYNAMIC_COLORS] = true
         preferences[PreferencesKeys.COLOR_ARGB] = normalized.argb
         preferences[PreferencesKeys.DARK_MODE] = normalized.isDark
         preferences[PreferencesKeys.THEME_STYLE] = normalized.style
@@ -158,7 +158,7 @@ private val PREFERENCES: Map<Preferences.Key<*>, Any> = buildMap {
     put(PreferencesKeys.CLIP_MODE, ClipMode.ADAPTIVE)
     put(PreferencesKeys.AUTO_REFRESH_CHANNELS, false)
     put(PreferencesKeys.FULL_INFO_PLAYER, false)
-    put(PreferencesKeys.NO_PICTURE_MODE, false)
+    put(PreferencesKeys.NO_PICTURE_MODE, true)
     put(PreferencesKeys.DARK_MODE, ThemePreference.DEFAULT.isDark)
     put(
         PreferencesKeys.USE_DYNAMIC_COLORS,
@@ -169,22 +169,22 @@ private val PREFERENCES: Map<Preferences.Key<*>, Any> = buildMap {
         ThemePreferencesSnapshot.DEFAULT.followSystemTheme,
     )
     put(PreferencesKeys.ZAPPING_MODE, false)
-    put(PreferencesKeys.BRIGHTNESS_GESTURE, true)
-    put(PreferencesKeys.VOLUME_GESTURE, true)
-    put(PreferencesKeys.SCREENCAST, true)
+    put(PreferencesKeys.BRIGHTNESS_GESTURE, false)
+    put(PreferencesKeys.VOLUME_GESTURE, false)
+    put(PreferencesKeys.SCREENCAST, false)
     put(PreferencesKeys.SCREEN_ROTATING, false)
     put(PreferencesKeys.UNSEENS_MILLISECONDS, UnseensMilliseconds.DAYS_3)
-    put(PreferencesKeys.RECONNECT_MODE, ReconnectMode.NO)
+    put(PreferencesKeys.RECONNECT_MODE, ReconnectMode.RECONNECT)
     put(PreferencesKeys.COLOR_ARGB, ThemePreference.DEFAULT.argb)
     put(PreferencesKeys.THEME_STYLE, ThemePreference.DEFAULT.style)
     put(PreferencesKeys.THEME_PRESET_ID, ThemePreference.DEFAULT.presetId)
     put(PreferencesKeys.TUNNELING, false)
     put(PreferencesKeys.CLOCK_MODE, false)
     put(PreferencesKeys.REMOTE_CONTROL, false)
-    put(PreferencesKeys.SLIDER, true)
+    put(PreferencesKeys.SLIDER, false)
     put(PreferencesKeys.ALWAYS_SHOW_REPLAY, false)
     put(PreferencesKeys.PLAYER_PANEL, true)
-    put(PreferencesKeys.COMPACT_DIMENSION, false)
+    put(PreferencesKeys.COMPACT_DIMENSION, true)
     put(PreferencesKeys.EXTERNAL_EXTENSIONS, false)
 }
 
