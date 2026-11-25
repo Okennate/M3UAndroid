@@ -29,7 +29,7 @@ data class PlayerState(
 fun rememberPlayerState(
     player: Player?,
     @ClipMode clipMode: Int = ClipMode.ADAPTIVE,
-    keepScreenOn: Boolean = false,
+    keepScreenOn: Boolean = true,
 ): PlayerState {
     return remember(
         player,
