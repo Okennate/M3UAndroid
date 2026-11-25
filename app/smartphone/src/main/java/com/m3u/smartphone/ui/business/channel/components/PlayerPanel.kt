@@ -115,6 +115,7 @@ internal fun PlayerPanel(
     val formatLocale = LocalConfiguration.current.locales[0]
 
     Surface(
+        color = Color.Black,
         shape = if (useVertical) AbsoluteSmoothCornerShape(
             cornerRadiusTL = spacing.medium,
             cornerRadiusTR = spacing.medium,
@@ -410,9 +411,6 @@ private fun ChannelGallery(
                             isPlaying = isPlaying,
                             isRoundedShape = !vertical
                         )
-                        if (vertical) {
-                            HorizontalDivider()
-                        }
                     }
                 }
             }
@@ -437,7 +435,7 @@ private fun ChannelGallery(
             state = lazyListState,
             modifier = Modifier
                 .fillMaxWidth()
-                .blurEdges(MaterialTheme.colorScheme.surface, listOf(Edge.Top, Edge.Bottom))
+                .blurEdges(Color.Black, listOf(Edge.Top, Edge.Bottom))
                 .then(modifier),
             content = content
         )
@@ -470,8 +468,9 @@ private fun ChannelGalleryItem(
 
     val containerColor =
         if (!isPlaying) Color.Black
-        else MaterialTheme.colorScheme.onSurface
-    
+        else Color(0xFF222222)
+        
+    val contentColor = Color.White
     val contentColor = if (!isPlaying) MaterialTheme.colorScheme.onSurface
     else MaterialTheme.colorScheme.surfaceColorAtElevation(spacing.small)
     val text = composableOf {
