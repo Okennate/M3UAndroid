@@ -179,9 +179,9 @@ internal fun PlayerPanel(
             val currentProgramme = animProgramme
             if (currentProgramme != null) {
                 Surface(
-                    color = Color.Black,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    shape = AbsoluteRoundedCornerShape(4.dp),
+                    color = Color(0xFF0E0E0E),
+                    shape = AbsoluteRoundedCornerShape(12.dp),
+                    shadowElevation = 8.dp,
                     modifier = Modifier.padding(spacing.medium)
                 ) {
                     Column(
@@ -467,11 +467,10 @@ private fun ChannelGalleryItem(
     val coroutineScope = rememberCoroutineScope()
 
     val containerColor =
-        if (!isPlaying) Color.Black
+        if (!isPlaying) Color(0xFF0A0A0A)
         else Color(0xFF222222)
         
     val contentColor = Color.White
-    else MaterialTheme.colorScheme.surfaceColorAtElevation(spacing.small)
     val text = composableOf {
         Text(
             text = channel.title,
