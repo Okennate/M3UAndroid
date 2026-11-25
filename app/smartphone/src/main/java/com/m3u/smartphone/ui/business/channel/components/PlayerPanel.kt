@@ -179,6 +179,7 @@ internal fun PlayerPanel(
             val currentProgramme = animProgramme
             if (currentProgramme != null) {
                 Surface(
+                    contentColor = Color.White.copy(alpha = 0.6f),
                     color = Color(0xFF0E0E0E),
                     shape = AbsoluteRoundedCornerShape(12.dp),
                     shadowElevation = 8.dp,
@@ -468,9 +469,12 @@ private fun ChannelGalleryItem(
 
     val containerColor =
         if (!isPlaying) Color(0xFF0A0A0A)
-        else Color(0xFF222222)
+        else Color(0xFF161616)
         
-    val contentColor = Color.White
+    val contentColor =
+        if (!isPlaying) Color.White.copy(alpha = 0.45f)
+        else Color.White.copy(alpha = 0.75f)
+        
     val text = composableOf {
         Text(
             text = channel.title,
