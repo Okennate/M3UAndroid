@@ -46,7 +46,7 @@ jobs:
         run: git apply --verbose record-while-watching.patch
         
       - name: Apply font patch
-        run: git apply --verbose defaults-and-system-font.patch
+        run: git apply --verbose defaults-and-system-font-font-only.patch
 
       - name: Build smartphone release APK
         run: ./gradlew :app:smartphone:assembleRelease
