@@ -1,0 +1,18 @@
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt
+index 80a6801..7dfa62b 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt
+@@ -9,9 +9,10 @@ import androidx.compose.ui.text.TextStyle
+ import com.m3u.smartphone.R
+ 
+ object FontFamilies {
+-    val GoogleSans = Font(R.font.google_sans).toFontFamily()
+-    val JetbrainsMono = Font(R.font.jb_mono_medium).toFontFamily()
+-    val LexendExa = Font(R.font.lexend_exa_medium).toFontFamily()
++    // Use the phone's own system font everywhere.
++    val GoogleSans: FontFamily = FontFamily.Default
++    val JetbrainsMono: FontFamily = FontFamily.Monospace
++    val LexendExa: FontFamily = FontFamily.Default
+ }
+ 
+ fun Typography.withFontFamily(
