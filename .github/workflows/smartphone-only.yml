@@ -47,6 +47,9 @@ jobs:
         
       - name: Apply font patch
         run: git apply --verbose system-font.patch
+        
+      - name: Apply onscreen patch
+        run: git apply --verbose keep-screen-on.patch
 
       - name: Build smartphone release APK
         run: ./gradlew :app:smartphone:assembleRelease
