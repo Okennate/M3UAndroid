@@ -468,8 +468,8 @@ private fun ChannelGalleryItem(
     val coroutineScope = rememberCoroutineScope()
 
     val containerColor =
-        if (!isPlaying) Color(0xFF101010)
-        else Color(0xFF161616)
+        if (!isPlaying) Color.Transparent
+        else Color(0xFF163B8F).copy(alpha = 0.35f)
         
     val contentColor =
         if (!isPlaying) Color.White.copy(alpha = 0.45f)
