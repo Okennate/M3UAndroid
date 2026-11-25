@@ -471,7 +471,6 @@ private fun ChannelGalleryItem(
         else Color(0xFF222222)
         
     val contentColor = Color.White
-    val contentColor = if (!isPlaying) MaterialTheme.colorScheme.onSurface
     else MaterialTheme.colorScheme.surfaceColorAtElevation(spacing.small)
     val text = composableOf {
         Text(
