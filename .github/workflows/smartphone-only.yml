@@ -43,10 +43,10 @@ jobs:
             echo "::warning::DEBUG_KEYSTORE_BASE64 secret not set - APK will get a new signature every build"
           fi
       - name: Apply record patch
-        run: git apply --verbose stream-recording-downloads-v5.patch
+        run: git apply --verbose record-while-watching.patch
         
       - name: Apply font patch
-        run: git apply --verbose samsung-system-font-and-preferences.patch
+        run: git apply --verbose defaults-and-system-font.patch
 
       - name: Build smartphone release APK
         run: ./gradlew :app:smartphone:assembleRelease
