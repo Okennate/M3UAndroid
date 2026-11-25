@@ -90,6 +90,7 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import androidx.compose.ui.graphics.Color
 
 @Composable
 internal fun PlayerPanel(
@@ -177,7 +178,7 @@ internal fun PlayerPanel(
             val currentProgramme = animProgramme
             if (currentProgramme != null) {
                 Surface(
-                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    color = Color.Black,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
                     shape = AbsoluteRoundedCornerShape(4.dp),
                     modifier = Modifier.padding(spacing.medium)
@@ -468,8 +469,9 @@ private fun ChannelGalleryItem(
     val coroutineScope = rememberCoroutineScope()
 
     val containerColor =
-        if (!isPlaying) MaterialTheme.colorScheme.surfaceColorAtElevation(spacing.medium)
+        if (!isPlaying) Color.Black
         else MaterialTheme.colorScheme.onSurface
+    
     val contentColor = if (!isPlaying) MaterialTheme.colorScheme.onSurface
     else MaterialTheme.colorScheme.surfaceColorAtElevation(spacing.small)
     val text = composableOf {
