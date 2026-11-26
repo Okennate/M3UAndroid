@@ -50,6 +50,9 @@ jobs:
         
       - name: Apply onscreen patch
         run: git apply --verbose keep-screen-on.patch
+        
+      - name: Apply reconnect patch
+        run: git apply --verbose reconnect.patch
 
       - name: Build smartphone release APK
         run: ./gradlew :app:smartphone:assembleRelease
