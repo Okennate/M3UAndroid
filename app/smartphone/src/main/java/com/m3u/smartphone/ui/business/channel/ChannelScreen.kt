@@ -136,6 +136,8 @@ fun ChannelRoute(
     val useVertical = PullPanelLayoutDefaults.UseVertical
 
     val maskState = rememberMaskState()
+    val hasPlaybackStarted = remember { mutableStateOf(false) }
+    val loadingMaskLock = remember { Any() }
     val pullPanelLayoutState = rememberPullPanelLayoutState()
 
     val isPanelExpanded = pullPanelLayoutState.isExpanded
@@ -218,10 +220,18 @@ fun ChannelRoute(
         val interceptor: MaskInterceptor? = if (isPipMode) { _ -> false } else null
         maskState.intercept(interceptor)
     }
-    // Keep the controls visible while the stream is loading; hide them once it starts playing.
+    // Keep controls locked visible until playback starts for the first time.
+    // After that, preserve the normal hide/show behaviour.
     LaunchedEffect(playerState.isPlaying, isPipMode) {
         if (playerState.isPlaying) {
+            hasPlaybackStarted.value = true
+            maskState.unlock(loadingMaskLock)
             maskState.sleep()
+        } else if (!hasPlaybackStarted.value) {
+            maskState.lock(loadingMaskLock)
+            if (!isPipMode) {
+                maskState.wake(3600.seconds)
+            }
         } else if (!isPipMode) {
             maskState.wake(3600.seconds)
         }
