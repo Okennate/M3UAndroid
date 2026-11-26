@@ -125,3 +125,12 @@ diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favouri
              items(
                  count = channels.itemCount,
                  key = channels.itemKey { it.id }
+diff --git a/business/favorite/build.gradle.kts b/business/favorite/build.gradle.kts
+--- a/business/favorite/build.gradle.kts
++++ b/business/favorite/build.gradle.kts
+@@ -19,4 +19,5 @@ dependencies {
+     implementation(project(":core:foundation"))
+     implementation(project(":data"))
++    implementation(project(":business:foryou"))
+ 
+     implementation(libs.androidx.core.ktx)
