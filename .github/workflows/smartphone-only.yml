@@ -50,6 +50,9 @@ jobs:
         
       - name: Apply onscreen patch
         run: git apply --verbose keep-screen-on.patch
+
+      - name: Apply favorite patch
+        run: git apply --verbose continue-watching-to-favourites.patch
         
       - name: Apply reconnect patch
         run: git apply --verbose reconnect.patch
