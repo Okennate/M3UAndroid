@@ -86,12 +86,10 @@ diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favouri
  import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 +import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
  import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
-@@ -20,2 +24,3 @@ import androidx.compose.ui.unit.dp
+@@ -20,3 +24,5 @@
  import androidx.paging.compose.LazyPagingItems
  import androidx.paging.compose.itemKey
 +import com.m3u.business.foryou.Recommend
-@@ -23,2 +24,3 @@ import androidx.paging.compose.itemKey
- import androidx.paging.compose.itemKey
  import com.m3u.core.foundation.components.CircularProgressIndicator
 +import com.m3u.smartphone.ui.business.foryou.components.recommend.RecommendItem
 @@ -31,3 +37,5 @@ internal fun FavoriteGallery(
