@@ -68,8 +68,8 @@ data class ThemePreferencesSnapshot(
     companion object {
         val DEFAULT = ThemePreferencesSnapshot(
             selection = ThemePreference.DEFAULT,
-            useDynamicColors = false,
-            followSystemTheme = false,
+            useDynamicColors = true,
+            followSystemTheme = true,
         )
     }
 }
