@@ -77,26 +77,37 @@ diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favouri
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt
-@@ -5,3 +5,4 @@ import androidx.compose.foundation.layout.Arrangement
- import androidx.compose.foundation.layout.PaddingValues
- import androidx.compose.foundation.layout.Row
-+import androidx.compose.foundation.layout.height
+@@ -6,15 +6,19 @@
  import androidx.compose.foundation.layout.fillMaxHeight
-@@ -10,2 +11,3 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
  import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 +import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
  import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
-@@ -20,1 +22,3 @@ import androidx.paging.compose.LazyPagingItems
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.unit.dp
+ import androidx.paging.compose.LazyPagingItems
  import androidx.paging.compose.itemKey
 +import com.m3u.business.foryou.Recommend
 +import com.m3u.smartphone.ui.business.foryou.components.recommend.RecommendItem
-@@ -31,3 +37,5 @@ internal fun FavoriteGallery(
+ import com.m3u.core.foundation.components.CircularProgressIndicator
+ import com.m3u.data.database.model.Channel
+ import com.m3u.smartphone.ui.material.ktx.plus
+@@ -25,6 +29,8 @@
+     contentPadding: PaddingValues,
      channels: LazyPagingItems<Channel>,
      zapping: Channel?,
 +    continueWatching: Recommend.CwSpec?,
 +    onClickContinueWatching: () -> Unit,
      recently: Boolean,
-@@ -54,3 +62,15 @@ internal fun FavoriteGallery(
+     rowCount: Int,
+     onClick: (Channel) -> Unit,
+@@ -51,6 +57,18 @@
+                 .fillMaxHeight()
                  .weight(1f),
          ) {
 +            if (continueWatching != null) {
@@ -112,3 +123,5 @@ diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favouri
 +                }
 +            }
              items(
+                 count = channels.itemCount,
+                 key = channels.itemKey { it.id }
