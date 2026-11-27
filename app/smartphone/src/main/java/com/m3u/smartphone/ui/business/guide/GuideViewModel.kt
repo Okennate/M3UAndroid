@@ -43,7 +43,9 @@ class GuideViewModel @Inject constructor(
                     while (currentCoroutineContext().isActive) {
                         val programmes = buildMap {
                             playlistUrls.forEach { playlistUrl ->
-                                putAll(programmeRepository.getProgrammesCurrently(playlistUrl))
+                                programmeRepository.getProgrammesCurrently(playlistUrl).forEach { (relationId, programme) ->
+                                    put("$playlistUrl\u0000$relationId", programme)
+                                }
                             }
                         }
                         emit(programmes)
@@ -71,7 +73,9 @@ class GuideViewModel @Inject constructor(
                 page.pagingMap { channel ->
                     ChannelWithProgramme(
                         channel = channel,
-                        programme = channel.relationId?.let(programmes::get),
+                        programme = channel.relationId?.let { relationId ->
+                            programmes["${channel.playlistUrl}\u0000$relationId"]
+                        },
                     )
                 }.filter { item -> item.programme != null }
             }
