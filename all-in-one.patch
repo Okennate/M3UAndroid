@@ -90,7 +90,7 @@ index 8af5befb..16fc6f5d 100644
              onResetPlayback = onResetPlayback,
              isPanelExpanded = isPanelExpanded,
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt
-index 1779679c..fdb57cb2 100644
+index 1779679c..57610fac 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt
 @@ -3,6 +3,7 @@ package com.m3u.smartphone.ui.business.channel
@@ -143,6 +143,20 @@ index 1779679c..fdb57cb2 100644
          handleIntent(intent)
          setContent {
              Toolkit(
+@@ -126,7 +148,12 @@ class PlayerActivity : ComponentActivity() {
+     override fun onPause() {
+         super.onPause()
+         if (!isInPictureInPictureMode) {
+-            viewModel.pauseOrContinue(false)
++            if (isFinishing) {
++                // Leaving the screen: close the connection now so releasing later is fast.
++                viewModel.stopPlayback()
++            } else {
++                viewModel.pauseOrContinue(false)
++            }
+         }
+     }
+ 
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt
 index e00e0dc9..61883d00 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt
@@ -377,10 +391,22 @@ index 20362fa7..a970539a 100644
      return remember(
          player,
 diff --git a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt b/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
-index c4113040..35424681 100644
+index c4113040..1ecae59d 100644
 --- a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
 +++ b/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
-@@ -371,4 +371,14 @@ class ChannelViewModel @Inject constructor(
+@@ -267,6 +267,11 @@ class ChannelViewModel @Inject constructor(
+         }
+     }
+ 
++    /** Called as soon as the player screen starts closing. */
++    fun stopPlayback() {
++        playerManager.stopPlayback()
++    }
++
+     fun pauseOrContinue(isContinued: Boolean) {
+         playerManager.pauseOrContinue(isContinued)
+     }
+@@ -371,4 +376,14 @@ class ChannelViewModel @Inject constructor(
              playerManager.recordVideo(uri)
          }
      }
@@ -656,10 +682,17 @@ index 00000000..d031ca3f
 +    }
 +}
 diff --git a/data/src/main/java/com/m3u/data/service/PlayerManager.kt b/data/src/main/java/com/m3u/data/service/PlayerManager.kt
-index b4a934c2..21378721 100644
+index b4a934c2..d4f909ea 100644
 --- a/data/src/main/java/com/m3u/data/service/PlayerManager.kt
 +++ b/data/src/main/java/com/m3u/data/service/PlayerManager.kt
-@@ -47,6 +47,10 @@ interface PlayerManager {
+@@ -41,12 +41,17 @@ interface PlayerManager {
+     )
+     suspend fun replay()
+     fun release()
++    fun stopPlayback()
+     fun clearCache()
+     fun pauseOrContinue(value: Boolean)
+     fun updateSpeed(race: Float)
  
      suspend fun recordVideo(uri: Uri)
  
@@ -671,10 +704,18 @@ index b4a934c2..21378721 100644
      suspend fun onResetPlayback(channelUrl: String)
      suspend fun getCwPosition(channelUrl: String): Long
 diff --git a/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt b/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt
-index 64923da1..5beae5e5 100644
+index 64923da1..367032d6 100644
 --- a/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt
 +++ b/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt
-@@ -13,6 +13,7 @@ import androidx.media3.common.PlaybackException
+@@ -4,6 +4,7 @@ import android.content.Context
+ import android.graphics.Bitmap
+ import android.graphics.Rect
+ import android.net.Uri
++import android.os.SystemClock
+ import androidx.core.net.toUri
+ import androidx.media3.common.AudioAttributes
+ import androidx.media3.common.C
+@@ -13,6 +14,7 @@ import androidx.media3.common.PlaybackException
  import androidx.media3.common.Player
  import androidx.media3.common.TrackGroup
  import androidx.media3.common.TrackSelectionOverride
@@ -682,7 +723,7 @@ index 64923da1..5beae5e5 100644
  import androidx.media3.common.Tracks
  import androidx.media3.common.VideoSize
  import androidx.media3.datasource.DataSource
-@@ -49,9 +50,12 @@ import androidx.media3.transformer.InAppMp4Muxer
+@@ -49,9 +51,12 @@ import androidx.media3.transformer.InAppMp4Muxer
  import androidx.media3.transformer.TransformationRequest
  import androidx.media3.transformer.Transformer
  import com.m3u.core.foundation.architecture.Publisher
@@ -695,7 +736,15 @@ index 64923da1..5beae5e5 100644
  import com.m3u.core.foundation.architecture.preferences.get
  import com.m3u.data.SSLs
  import com.m3u.data.api.OkhttpClient
-@@ -83,6 +87,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
+@@ -74,6 +79,7 @@ import io.ktor.http.Url
+ import kotlinx.coroutines.CoroutineScope
+ import kotlinx.coroutines.Dispatchers
+ import kotlinx.coroutines.FlowPreview
++import kotlinx.coroutines.Job
+ import kotlinx.coroutines.NonCancellable
+ import kotlinx.coroutines.delay
+ import kotlinx.coroutines.ensureActive
+@@ -83,6 +89,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
  import kotlinx.coroutines.flow.SharingStarted
  import kotlinx.coroutines.flow.StateFlow
  import kotlinx.coroutines.flow.collectLatest
@@ -703,7 +752,7 @@ index 64923da1..5beae5e5 100644
  import kotlinx.coroutines.flow.flatMapLatest
  import kotlinx.coroutines.flow.flow
  import kotlinx.coroutines.flow.flowOf
-@@ -100,6 +105,7 @@ import timber.log.Timber
+@@ -100,6 +107,7 @@ import timber.log.Timber
  import java.io.File
  import java.io.FileOutputStream
  import java.util.UUID
@@ -711,7 +760,7 @@ index 64923da1..5beae5e5 100644
  import javax.inject.Inject
  import kotlin.time.Duration.Companion.seconds
  import androidx.media3.exoplayer.DefaultLoadControl
-@@ -121,6 +127,17 @@ class PlayerManagerImpl @Inject constructor(
+@@ -121,6 +129,17 @@ class PlayerManagerImpl @Inject constructor(
      private val mainCoroutineScope = CoroutineScope(Dispatchers.Main)
      private val ioCoroutineScope = CoroutineScope(Dispatchers.IO)
  
@@ -729,7 +778,7 @@ index 64923da1..5beae5e5 100644
      private val channelPreferenceProvider = ChannelPreferenceProvider(
          directory = context.cacheDir.resolve("channel-preferences"),
          appVersion = publisher.versionCode
-@@ -211,6 +228,19 @@ class PlayerManagerImpl @Inject constructor(
+@@ -211,6 +230,19 @@ class PlayerManagerImpl @Inject constructor(
                  }
              }
          }
@@ -749,7 +798,7 @@ index 64923da1..5beae5e5 100644
          mainCoroutineScope.launch {
              while (true) {
                  ensureActive()
-@@ -224,6 +254,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -224,6 +256,7 @@ class PlayerManagerImpl @Inject constructor(
          command: MediaCommand,
          applyContinueWatching: Boolean
      ) {
@@ -757,7 +806,16 @@ index 64923da1..5beae5e5 100644
          val generation = providerSessionState.beginGeneration()
          playbackStateEvent.value = PlaybackStateEvent(
              generation = generation.value,
-@@ -355,6 +386,14 @@ class PlayerManagerImpl @Inject constructor(
+@@ -299,7 +332,7 @@ class PlayerManagerImpl @Inject constructor(
+                 val licenseType = channel.licenseType.orEmpty()
+                 val licenseKey = channel.licenseKey.orEmpty()
+ 
+-                channelRepository.reportPlayed(channel.id)
++                schedulePlayedReport(channel.id)
+                 if (!providerSessionState.isCurrent(generation)) return
+ 
+                 val playlist = playlistRepository.get(channel.playlistUrl)
+@@ -355,6 +388,14 @@ class PlayerManagerImpl @Inject constructor(
          if (!providerSessionState.isCurrent(generation)) return
          val rtmp: Boolean = Url(url).protocol.name == "rtmp"
          val tunneling = settings[PreferencesKeys.TUNNELING]
@@ -772,7 +830,7 @@ index 64923da1..5beae5e5 100644
  
          val mimeType = when (val chain = chain) {
              is MimetypeChain.Remembered -> chain.mimeType
-@@ -390,6 +429,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -390,6 +431,7 @@ class PlayerManagerImpl @Inject constructor(
                  requestHeaders = requestHeaders,
                  providerPlayback = providerPlayback,
                  providerPlaybackAllowsCrossOrigin = providerPlaybackAllowsCrossOrigin,
@@ -780,7 +838,7 @@ index 64923da1..5beae5e5 100644
              )
          }
          val extractorsFactory = DefaultExtractorsFactory().setTsExtractorFlags(
-@@ -397,12 +437,14 @@ class PlayerManagerImpl @Inject constructor(
+@@ -397,12 +439,14 @@ class PlayerManagerImpl @Inject constructor(
          )
          val mediaExtractor = MediaExtractorCompat(extractorsFactory, dataSourceFactory)
          val mediaSourceFactory = when (mimeType) {
@@ -798,7 +856,7 @@ index 64923da1..5beae5e5 100644
                  extractorsFactory
              )
  
-@@ -411,7 +453,14 @@ class PlayerManagerImpl @Inject constructor(
+@@ -411,7 +455,14 @@ class PlayerManagerImpl @Inject constructor(
                  .setForceUseRtpTcp(true)
                  .setSocketFactory(SSLs.TLSTrustAll.socketFactory)
  
@@ -814,7 +872,7 @@ index 64923da1..5beae5e5 100644
          }
          timber.d("media-source-factory: ${mediaSourceFactory::class.qualifiedName}")
          if (licenseType.isNotEmpty()) {
-@@ -449,7 +498,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -449,7 +500,7 @@ class PlayerManagerImpl @Inject constructor(
              .setUri(url)
              .setLiveConfiguration(
                  MediaItem.LiveConfiguration.Builder()
@@ -823,7 +881,7 @@ index 64923da1..5beae5e5 100644
                      .build()
              )
              .build()
-@@ -460,6 +509,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -460,6 +511,7 @@ class PlayerManagerImpl @Inject constructor(
              mediaSource = mediaSource,
              mediaExtractor = mediaExtractor,
              tunneling = tunneling,
@@ -831,15 +889,78 @@ index 64923da1..5beae5e5 100644
          ) ?: return
          mainCoroutineScope.launch {
              if (!providerSessionState.isCurrent(generation)) return@launch
-@@ -522,6 +572,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -522,6 +574,10 @@ class PlayerManagerImpl @Inject constructor(
      }
  
      private fun releasePlayer() {
-+        streamRecorder.stop()
++        val startedAt = SystemClock.elapsedRealtime()
++        // Closing the recording file can block on disk, so keep it off the main thread.
++        ioCoroutineScope.launch { streamRecorder.stop() }
++        flushPlayedReport()
          synchronized(playerLifecycleLock) {
              extractor = null
              activeRequestHeaders = emptyMap()
-@@ -622,17 +673,13 @@ class PlayerManagerImpl @Inject constructor(
+@@ -543,6 +599,59 @@ class PlayerManagerImpl @Inject constructor(
+             activePlayerGeneration = null
+             player.value = null
+         }
++        val took = SystemClock.elapsedRealtime() - startedAt
++        if (took > 200) {
++            timber.w("releasePlayer took ${took}ms on ${Thread.currentThread().name}")
++        } else {
++            timber.d("releasePlayer took ${took}ms")
++        }
++    }
++
++    /**
++     * Stops loading and playing right away but keeps the player instance.
++     * Called when the player screen starts closing, so by the time the player is
++     * released its connection is already closed and release() returns quickly.
++     */
++    override fun stopPlayback() {
++        val startedAt = SystemClock.elapsedRealtime()
++        player.value?.stop()
++        timber.d("stopPlayback took ${SystemClock.elapsedRealtime() - startedAt}ms")
++    }
++
++    // Writing "seen" changes the streams table, which makes every channel list query
++    // run again. Do it a while after playback starts (or when it ends, whichever is
++    // first) instead of at the exact moment a channel opens.
++    private val playedReportLock = Any()
++    private var pendingPlayedChannelId: Int? = null
++    private var pendingPlayedJob: Job? = null
++
++    private fun schedulePlayedReport(channelId: Int) {
++        flushPlayedReport()
++        synchronized(playedReportLock) {
++            pendingPlayedChannelId = channelId
++            pendingPlayedJob = ioCoroutineScope.launch {
++                delay(PLAYED_REPORT_DELAY_SECONDS.seconds)
++                flushPlayedReport()
++            }
++        }
++    }
++
++    private fun flushPlayedReport() {
++        val channelId: Int?
++        val job: Job?
++        synchronized(playedReportLock) {
++            channelId = pendingPlayedChannelId
++            job = pendingPlayedJob
++            pendingPlayedChannelId = null
++            pendingPlayedJob = null
++        }
++        job?.cancel()
++        if (channelId != null) {
++            ioCoroutineScope.launch {
++                runCatching { channelRepository.reportPlayed(channelId) }
++                    .onFailure { timber.w(it, "reportPlayed failed") }
++            }
++        }
+     }
+ 
+     override fun clearCache() {
+@@ -622,17 +731,13 @@ class PlayerManagerImpl @Inject constructor(
      private fun createPlayer(
          mediaSourceFactory: MediaSource.Factory,
          tunneling: Boolean,
@@ -860,7 +981,7 @@ index 64923da1..5beae5e5 100644
          .setHandleAudioBecomingNoisy(true)
          .build()
          .apply {
-@@ -651,6 +698,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -651,6 +756,7 @@ class PlayerManagerImpl @Inject constructor(
          mediaSource: MediaSource,
          mediaExtractor: MediaExtractorCompat,
          tunneling: Boolean,
@@ -868,7 +989,7 @@ index 64923da1..5beae5e5 100644
      ): ExoPlayer? {
          var result: ExoPlayer? = null
          providerSessionState.runIfCurrent(generation) {
-@@ -660,6 +708,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -660,6 +766,7 @@ class PlayerManagerImpl @Inject constructor(
                      createPlayer(
                          mediaSourceFactory = mediaSourceFactory,
                          tunneling = tunneling,
@@ -876,7 +997,7 @@ index 64923da1..5beae5e5 100644
                          listener = listener,
                      ).also { createdPlayer ->
                          timber.d("player instance updated")
-@@ -706,20 +755,34 @@ class PlayerManagerImpl @Inject constructor(
+@@ -706,20 +813,34 @@ class PlayerManagerImpl @Inject constructor(
          Codecs.createRenderersFactory(context)
      }
  
@@ -924,7 +1045,7 @@ index 64923da1..5beae5e5 100644
  
      private fun createHttpDataSourceFactory(
          url: String,
-@@ -727,8 +790,9 @@ class PlayerManagerImpl @Inject constructor(
+@@ -727,8 +848,9 @@ class PlayerManagerImpl @Inject constructor(
          requestHeaders: Map<String, String>,
          providerPlayback: Boolean,
          providerPlaybackAllowsCrossOrigin: Boolean,
@@ -935,7 +1056,7 @@ index 64923da1..5beae5e5 100644
              providerOkHttpClient.withProviderPlaybackHeaders(
                  entryUrl = url,
                  headers = requestHeaders,
-@@ -737,6 +801,15 @@ class PlayerManagerImpl @Inject constructor(
+@@ -737,6 +859,15 @@ class PlayerManagerImpl @Inject constructor(
          } else {
              okHttpClient
          }
@@ -951,7 +1072,7 @@ index 64923da1..5beae5e5 100644
          val upstream = OkHttpDataSource.Factory(client)
              .setUserAgent(userAgent)
          if (!providerPlayback) {
-@@ -780,6 +853,35 @@ class PlayerManagerImpl @Inject constructor(
+@@ -780,6 +911,35 @@ class PlayerManagerImpl @Inject constructor(
          }
      }
  
@@ -987,7 +1108,7 @@ index 64923da1..5beae5e5 100644
      private fun handlePlayerErrorChanged(
          generation: Long,
          exception: PlaybackException?,
-@@ -844,6 +946,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -844,6 +1004,7 @@ class PlayerManagerImpl @Inject constructor(
                          generation = generation,
                          reason = ProviderPlaybackCloseReason.PLAYBACK_FAILED,
                      )
@@ -995,7 +1116,7 @@ index 64923da1..5beae5e5 100644
                  }
  
                  else -> {
-@@ -853,6 +956,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -853,6 +1014,7 @@ class PlayerManagerImpl @Inject constructor(
                              generation = generation,
                              reason = ProviderPlaybackCloseReason.PLAYBACK_FAILED,
                          )
@@ -1003,7 +1124,7 @@ index 64923da1..5beae5e5 100644
                      }
                      playbackException.value = exception
                  }
-@@ -875,6 +979,7 @@ class PlayerManagerImpl @Inject constructor(
+@@ -875,6 +1037,7 @@ class PlayerManagerImpl @Inject constructor(
      ) {
          providerSessionState.runIfCurrent(generation) {
              this.isPlaying.value = isPlaying
@@ -1011,10 +1132,12 @@ index 64923da1..5beae5e5 100644
          }
      }
  
-@@ -1198,6 +1303,38 @@ class PlayerManagerImpl @Inject constructor(
+@@ -1198,6 +1361,40 @@ class PlayerManagerImpl @Inject constructor(
      }
  }
  
++private const val PLAYED_REPORT_DELAY_SECONDS = 15
++
 +/** Playback options chosen by the user in Settings. */
 +private data class PlaybackTuning(
 +    val videoQuality: Int,
