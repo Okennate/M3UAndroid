@@ -7,6 +7,7 @@
     <string name="ui_destination_favourite">Favorite</string>
     <string name="ui_title_guide">Guide</string>
     <string name="ui_destination_guide">Guide</string>
+    <string name="ui_guide_now">Now</string>
     <string name="ui_guide_empty">No programme information is available yet. Add or refresh an EPG source in your playlist settings.</string>
     <string name="ui_destination_setting">Settings</string>
     <string name="ui_destination_playlist">Playlist</string>
