@@ -28,7 +28,6 @@ import com.m3u.data.database.model.ProviderAccount
 import com.m3u.data.database.model.refreshable
 import com.m3u.data.database.model.toMap
 import com.m3u.data.parser.m3u.M3UParser
-import com.m3u.data.parser.m3u.readM3uEpgUrlsFromHeader
 import com.m3u.data.parser.m3u.toChannel
 import com.m3u.data.parser.xtream.XtreamEpisodeInfo
 import com.m3u.data.parser.xtream.XtreamInput
@@ -82,7 +81,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
@@ -208,12 +206,9 @@ internal class PlaylistRepositoryImpl @Inject constructor(
         callback(0)
         timber.d("Importing M3U subscription")
         val existingPlaylistUrls = arrayOf(sourceUrl, internalUrl).distinct().toTypedArray()
-        var detectedEpgUrls: List<String> = emptyList()
         val stagedChannels = flow {
             openM3uInputOrThrow(inputUrl).use { input ->
-                val bufferedInput = input.buffered()
-                detectedEpgUrls = bufferedInput.readM3uEpgUrlsFromHeader()
-                m3uParser.parse(bufferedInput).collect { parsed ->
+                m3uParser.parse(input.buffered()).collect { parsed ->
                     emit(
                         StagedChannel(
                             channel = parsed.toChannel(internalUrl),
@@ -230,7 +225,6 @@ internal class PlaylistRepositoryImpl @Inject constructor(
         )
         try {
             val playlistStrategy = settings[PreferencesKeys.PLAYLIST_STRATEGY]
-            val newlyAddedEpgUrls = mutableListOf<String>()
             val commitDatabase: suspend () -> Unit = {
                 database.withTransaction {
                     val favOrHiddenRelationIds = when (playlistStrategy) {
@@ -254,31 +248,11 @@ internal class PlaylistRepositoryImpl @Inject constructor(
                     if (sourceUrl != internalUrl) {
                         playlistDao.updateUrl(sourceUrl, internalUrl)
                     }
-                    val previousPlaylist = playlistDao.get(internalUrl)
-                    val acceptedEpgUrls = detectedEpgUrls.filter { epgUrl ->
-                        val existingEpg = playlistDao.get(epgUrl)
-                        existingEpg == null || existingEpg.source == DataSource.EPG
-                    }
-                    val playlist = (previousPlaylist?.copy(
+                    val playlist = playlistDao.get(internalUrl)?.copy(
                         title = title,
                         // The previous row may have been saved as EPG or another source.
                         source = DataSource.M3U,
-                    ) ?: Playlist(title, internalUrl, source = DataSource.M3U)).let { current ->
-                        current.copy(epgUrls = (current.epgUrls + acceptedEpgUrls).distinct())
-                    }
-                    newlyAddedEpgUrls += acceptedEpgUrls.filterNot { it in previousPlaylist?.epgUrls.orEmpty() }
-                    acceptedEpgUrls.forEach { epgUrl ->
-                        if (playlistDao.get(epgUrl) == null) {
-                            val epgHost = epgUrl.toHttpUrlOrNull()?.host ?: epgUrl
-                            playlistDao.insertOrReplace(
-                                Playlist(
-                                    title = epgHost,
-                                    url = epgUrl,
-                                    source = DataSource.EPG,
-                                )
-                            )
-                        }
-                    }
+                    ) ?: Playlist(title, internalUrl, source = DataSource.M3U)
                     deleteChannelsForImport(internalUrl, playlistStrategy)
                     playlistDao.insertOrReplace(playlist)
                     staging.forEachBatch(BUFFER_M3U_CAPACITY) { staged ->
@@ -316,9 +290,6 @@ internal class PlaylistRepositoryImpl @Inject constructor(
                 cancelPlaylistUrls = listOf(sourceUrl, internalUrl),
                 schedulePlaylistUrls = listOf(internalUrl),
             )
-            if (newlyAddedEpgUrls.isNotEmpty()) {
-                SubscriptionWorker.epg(workManager, internalUrl, true)
-            }
         } finally {
             staging.close()
         }
