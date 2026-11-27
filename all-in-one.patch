@@ -1,0 +1,1209 @@
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt
+index d49035fb..66870bd8 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt
+@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+ import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+ import androidx.compose.material.icons.rounded.Archive
+ import androidx.compose.material.icons.rounded.Cast
++import androidx.compose.material.icons.rounded.FiberManualRecord
+ import androidx.compose.material.icons.rounded.HighQuality
+ import androidx.compose.material.icons.rounded.Pause
+ import androidx.compose.material.icons.rounded.PictureInPicture
+@@ -45,6 +46,7 @@ import androidx.compose.material.icons.rounded.ScreenRotationAlt
+ import androidx.compose.material.icons.rounded.SkipNext
+ import androidx.compose.material.icons.rounded.SkipPrevious
+ import androidx.compose.material.icons.rounded.Star
++import androidx.compose.material.icons.rounded.Stop
+ import androidx.compose.material.icons.rounded.Unarchive
+ import androidx.compose.material3.LocalContentColor
+ import androidx.compose.material3.MaterialTheme
+@@ -128,6 +130,8 @@ fun ChannelMask(
+     isPanelExpanded: Boolean,
+     useVertical: Boolean,
+     hasTrack: Boolean,
++    isRecording: Boolean,
++    onRecord: () -> Unit,
+     cwPosition: Long,
+     onResetPlayback: () -> Unit,
+     onSpeedUpdated: (Float) -> Unit,
+@@ -320,6 +324,16 @@ fun ChannelMask(
+                     )
+                 }
+ 
++                if (playerState.isPlaying || isRecording) {
++                    MaskButton(
++                        state = maskState,
++                        icon = if (isRecording) Icons.Rounded.Stop else Icons.Rounded.FiberManualRecord,
++                        tint = if (isRecording) Color.Red else Color.Unspecified,
++                        onClick = onRecord,
++                        contentDescription = if (isRecording) "Stop recording" else "Record"
++                    )
++                }
++
+                 MaskButton(
+                     state = maskState,
+                     icon = if (currentIsPanelExpanded) Icons.Rounded.Archive
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt
+index 8af5befb..16fc6f5d 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt
+@@ -97,6 +97,7 @@ fun ChannelRoute(
+         rememberPermissionState(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+ 
+     val playerState: PlayerState by viewModel.playerState.collectAsStateWithLifecycle()
++    val isRecording by viewModel.isRecording.collectAsStateWithLifecycle()
+     val channel by viewModel.channel.collectAsStateWithLifecycle()
+     val adjacentChannels by viewModel.adjacentChannels.collectAsStateWithLifecycle()
+     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
+@@ -320,6 +321,14 @@ fun ChannelRoute(
+                 channel = channel,
+                 supportsDirectSharing = supportsDirectSharing,
+                 hasTrack = tracks.isNotEmpty(),
++                isRecording = isRecording,
++                onRecord = {
++                    if (isRecording) {
++                        viewModel.stopRecording()
++                    } else {
++                        viewModel.startRecording()
++                    }
++                },
+                 isPanelExpanded = isPanelExpanded,
+                 brightness = brightness,
+                 onBrightness = { brightness = it },
+@@ -393,6 +402,8 @@ private fun ChannelPlayer(
+     adjacentChannels: AdjacentChannels?,
+     isSeriesPlaylist: Boolean,
+     hasTrack: Boolean,
++    isRecording: Boolean,
++    onRecord: () -> Unit,
+     isPanelExpanded: Boolean,
+     brightness: Float,
+     volume: Float,
+@@ -496,6 +507,8 @@ private fun ChannelPlayer(
+             supportsDirectSharing = supportsDirectSharing,
+             useVertical = useVertical,
+             hasTrack = hasTrack,
++            isRecording = isRecording,
++            onRecord = onRecord,
+             cwPosition = cwPosition,
+             onResetPlayback = onResetPlayback,
+             isPanelExpanded = isPanelExpanded,
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt
+index 1779679c..fdb57cb2 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt
+@@ -3,6 +3,7 @@ package com.m3u.smartphone.ui.business.channel
+ import android.content.Intent
+ import android.content.res.Configuration
+ import android.os.Bundle
++import android.view.WindowManager
+ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.setContent
+ import androidx.activity.enableEdgeToEdge
+@@ -12,6 +13,7 @@ import androidx.compose.runtime.remember
+ import androidx.compose.ui.graphics.Color
+ import androidx.lifecycle.Lifecycle
+ import androidx.lifecycle.lifecycleScope
++import androidx.lifecycle.repeatOnLifecycle
+ import com.m3u.business.channel.ChannelViewModel
+ import com.m3u.core.foundation.Contracts
+ import com.m3u.data.database.model.isSeries
+@@ -24,6 +26,8 @@ import com.m3u.smartphone.ui.material.components.Background
+ import com.m3u.smartphone.ui.material.model.LocalHazeState
+ import dagger.hilt.android.AndroidEntryPoint
+ import dev.chrisbanes.haze.HazeState
++import kotlinx.coroutines.flow.distinctUntilChanged
++import kotlinx.coroutines.flow.map
+ import kotlinx.coroutines.launch
+ import javax.inject.Inject
+ 
+@@ -48,6 +52,24 @@ class PlayerActivity : ComponentActivity() {
+     override fun onCreate(savedInstanceState: Bundle?) {
+         enableEdgeToEdge()
+         super.onCreate(savedInstanceState)
++        // Keep the screen on only while streaming (playing or buffering).
++        lifecycleScope.launch {
++            repeatOnLifecycle(Lifecycle.State.STARTED) {
++                viewModel.playerState
++                    .map {
++                        it.isPlaying ||
++                                it.playState == androidx.media3.common.Player.STATE_BUFFERING
++                    }
++                    .distinctUntilChanged()
++                    .collect { streaming ->
++                        if (streaming) {
++                            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
++                        } else {
++                            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
++                        }
++                    }
++            }
++        }
+         handleIntent(intent)
+         setContent {
+             Toolkit(
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt
+index e00e0dc9..61883d00 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt
+@@ -70,6 +70,7 @@ fun FavoriteRoute(
+     val channels = viewModel.channels.collectAsLazyPagingItems()
+     val episodes by viewModel.episodes.collectAsStateWithLifecycle()
+     val zapping by viewModel.zapping.collectAsStateWithLifecycle()
++    val continueWatching by viewModel.continueWatching.collectAsStateWithLifecycle()
+     val sorts = viewModel.sorts
+     val sort by viewModel.sort.collectAsStateWithLifecycle()
+ 
+@@ -103,6 +104,7 @@ fun FavoriteRoute(
+         rowCount = rowCount,
+         channels = channels,
+         zapping = zapping,
++        continueWatching = continueWatching,
+         recently = sort == Sort.RECENTLY,
+         onClickChannel = { channel ->
+             coroutineScope.launch {
+@@ -187,6 +189,7 @@ private fun FavoriteScreen(
+     rowCount: Int,
+     channels: LazyPagingItems<Channel>,
+     zapping: Channel?,
++    continueWatching: com.m3u.business.foryou.Recommend.CwSpec?,
+     recently: Boolean,
+     onClickChannel: (Channel) -> Unit,
+     onLongClickChannel: (Channel) -> Unit,
+@@ -202,6 +205,8 @@ private fun FavoriteScreen(
+         contentPadding = contentPadding,
+         channels = channels,
+         zapping = zapping,
++        continueWatching = continueWatching,
++        onClickContinueWatching = { continueWatching?.let { onClickChannel(it.channel) } },
+         recently = recently,
+         rowCount = actualRowCount,
+         onClick = onClickChannel,
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt
+index de941137..6db2f133 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt
+@@ -6,15 +6,19 @@ import androidx.compose.foundation.layout.Row
+ import androidx.compose.foundation.layout.fillMaxHeight
+ import androidx.compose.foundation.layout.fillMaxSize
+ import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.height
+ import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+ import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
++import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+ import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.unit.dp
+ import androidx.paging.compose.LazyPagingItems
+ import androidx.paging.compose.itemKey
++import com.m3u.business.foryou.Recommend
++import com.m3u.smartphone.ui.business.foryou.components.recommend.RecommendItem
+ import com.m3u.core.foundation.components.CircularProgressIndicator
+ import com.m3u.data.database.model.Channel
+ import com.m3u.smartphone.ui.material.ktx.plus
+@@ -25,6 +29,8 @@ internal fun FavoriteGallery(
+     contentPadding: PaddingValues,
+     channels: LazyPagingItems<Channel>,
+     zapping: Channel?,
++    continueWatching: Recommend.CwSpec?,
++    onClickContinueWatching: () -> Unit,
+     recently: Boolean,
+     rowCount: Int,
+     onClick: (Channel) -> Unit,
+@@ -51,6 +57,18 @@ internal fun FavoriteGallery(
+                 .fillMaxHeight()
+                 .weight(1f),
+         ) {
++            if (continueWatching != null) {
++                item(span = StaggeredGridItemSpan.FullLine) {
++                    RecommendItem(
++                        spec = continueWatching,
++                        pageOffset = 0f,
++                        onClick = onClickContinueWatching,
++                        modifier = Modifier
++                            .fillMaxWidth()
++                            .height(128.dp)
++                    )
++                }
++            }
+             items(
+                 count = channels.itemCount,
+                 key = channels.itemKey { it.id }
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/setting/fragments/OptionalFragment.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/setting/fragments/OptionalFragment.kt
+index 0d12e028..d0af1c93 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/setting/fragments/OptionalFragment.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/setting/fragments/OptionalFragment.kt
+@@ -10,6 +10,12 @@ import androidx.compose.material.icons.rounded.AccessTime
+ import androidx.compose.material.icons.rounded.BrightnessMedium
+ import androidx.compose.material.icons.rounded.Cast
+ import androidx.compose.material.icons.rounded.Details
++import androidx.compose.material.icons.rounded.HighQuality
++import androidx.compose.material.icons.rounded.HourglassTop
++import androidx.compose.material.icons.rounded.Replay
++import androidx.compose.material.icons.rounded.Schedule
++import androidx.compose.material.icons.rounded.SignalCellularAlt
++import androidx.compose.material.icons.rounded.Storage
+ import androidx.compose.material.icons.rounded.FlashOn
+ import androidx.compose.material.icons.rounded.Loop
+ import androidx.compose.material.icons.rounded.PictureInPicture
+@@ -28,11 +34,16 @@ import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.res.pluralStringResource
+ import androidx.compose.ui.res.stringResource
++import com.m3u.core.foundation.architecture.preferences.BufferSize
+ import com.m3u.core.foundation.architecture.preferences.ConnectTimeout
++import com.m3u.core.foundation.architecture.preferences.LiveDelay
++import com.m3u.core.foundation.architecture.preferences.NetworkTimeout
+ import com.m3u.core.foundation.architecture.preferences.PlaylistStrategy
+ import com.m3u.core.foundation.architecture.preferences.PreferencesKeys
+ import com.m3u.core.foundation.architecture.preferences.ReconnectMode
++import com.m3u.core.foundation.architecture.preferences.RetryCount
+ import com.m3u.core.foundation.architecture.preferences.UnseensMilliseconds
++import com.m3u.core.foundation.architecture.preferences.VideoQuality
+ import com.m3u.core.foundation.architecture.preferences.mutablePreferenceOf
+ import com.m3u.core.foundation.util.basic.title
+ import com.m3u.i18n.R.string
+@@ -65,6 +76,78 @@ internal fun OptionalFragment(
+                 onChanged = { tunneling = !tunneling }
+             )
+         }
++        item {
++            var videoQuality by mutablePreferenceOf(PreferencesKeys.VIDEO_QUALITY)
++            TextPreference(
++                title = stringResource(string.feat_setting_video_quality).title(),
++                icon = Icons.Rounded.HighQuality,
++                trailing = if (videoQuality == VideoQuality.AUTO) {
++                    stringResource(string.feat_setting_video_quality_auto)
++                } else {
++                    "${videoQuality}p"
++                },
++                onClick = { videoQuality = VideoQuality.next(videoQuality) }
++            )
++        }
++        item {
++            var bufferSize by mutablePreferenceOf(PreferencesKeys.BUFFER_SIZE)
++            TextPreference(
++                title = stringResource(string.feat_setting_buffer_size).title(),
++                icon = Icons.Rounded.Storage,
++                trailing = stringResource(
++                    when (bufferSize) {
++                        BufferSize.MEDIUM -> string.feat_setting_buffer_size_medium
++                        BufferSize.LARGE -> string.feat_setting_buffer_size_large
++                        BufferSize.MAX -> string.feat_setting_buffer_size_max
++                        else -> string.feat_setting_buffer_size_normal
++                    }
++                ),
++                onClick = { bufferSize = BufferSize.next(bufferSize) }
++            )
++        }
++        item {
++            var networkTimeout by mutablePreferenceOf(PreferencesKeys.NETWORK_TIMEOUT)
++            TextPreference(
++                title = stringResource(string.feat_setting_network_timeout).title(),
++                icon = Icons.Rounded.HourglassTop,
++                trailing = stringResource(
++                    when (networkTimeout) {
++                        NetworkTimeout.LONG -> string.feat_setting_network_timeout_long
++                        NetworkTimeout.LONGER -> string.feat_setting_network_timeout_longer
++                        else -> string.feat_setting_network_timeout_default
++                    }
++                ),
++                onClick = { networkTimeout = NetworkTimeout.next(networkTimeout) }
++            )
++        }
++        item {
++            var retryCount by mutablePreferenceOf(PreferencesKeys.RETRY_COUNT)
++            TextPreference(
++                title = stringResource(string.feat_setting_retry_count).title(),
++                icon = Icons.Rounded.Replay,
++                trailing = retryCount.toString(),
++                onClick = { retryCount = RetryCount.next(retryCount) }
++            )
++        }
++        item {
++            var liveDelay by mutablePreferenceOf(PreferencesKeys.LIVE_DELAY)
++            TextPreference(
++                title = stringResource(string.feat_setting_live_delay).title(),
++                icon = Icons.Rounded.Schedule,
++                trailing = "${liveDelay}s",
++                onClick = { liveDelay = LiveDelay.next(liveDelay) }
++            )
++        }
++        item {
++            var smooth by mutablePreferenceOf(PreferencesKeys.SMOOTH_QUALITY_SWITCHING)
++            SwitchSharedPreference(
++                title = string.feat_setting_smooth_quality_switching,
++                content = string.feat_setting_smooth_quality_switching_description,
++                icon = Icons.Rounded.SignalCellularAlt,
++                checked = smooth,
++                onChanged = { smooth = !smooth }
++            )
++        }
+         item {
+             var fullInfoPlayer by mutablePreferenceOf(PreferencesKeys.FULL_INFO_PLAYER)
+             SwitchSharedPreference(
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt
+index 80a68016..7dfa62b9 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt
+@@ -9,9 +9,10 @@ import androidx.compose.ui.text.TextStyle
+ import com.m3u.smartphone.R
+ 
+ object FontFamilies {
+-    val GoogleSans = Font(R.font.google_sans).toFontFamily()
+-    val JetbrainsMono = Font(R.font.jb_mono_medium).toFontFamily()
+-    val LexendExa = Font(R.font.lexend_exa_medium).toFontFamily()
++    // Use the phone's own system font everywhere.
++    val GoogleSans: FontFamily = FontFamily.Default
++    val JetbrainsMono: FontFamily = FontFamily.Monospace
++    val LexendExa: FontFamily = FontFamily.Default
+ }
+ 
+ fun Typography.withFontFamily(
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt
+index 20362fa7..a970539a 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt
+@@ -29,7 +29,7 @@ data class PlayerState(
+ fun rememberPlayerState(
+     player: Player?,
+     @ClipMode clipMode: Int = ClipMode.ADAPTIVE,
+-    keepScreenOn: Boolean = true,
++    keepScreenOn: Boolean = false, // screen-on is handled per window in PlayerActivity
+ ): PlayerState {
+     return remember(
+         player,
+diff --git a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt b/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
+index c4113040..35424681 100644
+--- a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
++++ b/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
+@@ -371,4 +371,14 @@ class ChannelViewModel @Inject constructor(
+             playerManager.recordVideo(uri)
+         }
+     }
++
++    val isRecording: StateFlow<Boolean> = playerManager.isRecording
++
++    fun startRecording() {
++        playerManager.startRecording()
++    }
++
++    fun stopRecording() {
++        playerManager.stopRecording()
++    }
+ }
+diff --git a/business/favorite/build.gradle.kts b/business/favorite/build.gradle.kts
+index 336a4852..15529180 100644
+--- a/business/favorite/build.gradle.kts
++++ b/business/favorite/build.gradle.kts
+@@ -18,6 +18,7 @@ android {
+ dependencies {
+     implementation(project(":core:foundation"))
+     implementation(project(":data"))
++    implementation(project(":business:foryou"))
+ 
+     implementation(libs.androidx.core.ktx)
+ 
+diff --git a/business/favorite/src/main/java/com/m3u/business/favorite/FavouriteViewModel.kt b/business/favorite/src/main/java/com/m3u/business/favorite/FavouriteViewModel.kt
+index fa5543ab..a1ac3cb8 100644
+--- a/business/favorite/src/main/java/com/m3u/business/favorite/FavouriteViewModel.kt
++++ b/business/favorite/src/main/java/com/m3u/business/favorite/FavouriteViewModel.kt
+@@ -21,6 +21,7 @@ import com.m3u.core.foundation.wrapper.Resource
+ import com.m3u.core.foundation.wrapper.Sort
+ import com.m3u.core.foundation.wrapper.mapResource
+ import com.m3u.core.foundation.wrapper.resource
++import com.m3u.business.foryou.Recommend
+ import com.m3u.data.database.model.Channel
+ import com.m3u.data.database.model.Playlist
+ import com.m3u.data.parser.xtream.XtreamEpisodeInfo
+@@ -50,6 +51,17 @@ class FavoriteViewModel @Inject constructor(
+     private val playerManager: PlayerManager,
+     settings: Settings,
+ ) : ViewModel() {
++    val continueWatching: StateFlow<Recommend.CwSpec?> = channelRepository
++        .observePlayedRecently()
++        .map { channel ->
++            channel?.let { Recommend.CwSpec(it, playerManager.getCwPosition(it.url)) }
++        }
++        .stateIn(
++            scope = viewModelScope,
++            initialValue = null,
++            started = SharingStarted.WhileSubscribed(5_000L)
++        )
++
+     val zapping: StateFlow<Channel?> = combine(
+         settings.flowOf(PreferencesKeys.ZAPPING_MODE),
+         playerManager.channel
+diff --git a/business/foryou/src/main/java/com/m3u/business/foryou/ForyouViewModel.kt b/business/foryou/src/main/java/com/m3u/business/foryou/ForyouViewModel.kt
+index 1d5aeeae..efff5009 100644
+--- a/business/foryou/src/main/java/com/m3u/business/foryou/ForyouViewModel.kt
++++ b/business/foryou/src/main/java/com/m3u/business/foryou/ForyouViewModel.kt
+@@ -92,15 +92,12 @@ class ForyouViewModel @Inject constructor(
+             initialValue = Duration.INFINITE
+         )
+ 
+-    val specs = combine(
+-        unseensDuration.flatMapLatest { channelRepository.observeAllUnseenFavorites(it) },
+-        channelRepository.observePlayedRecently(),
+-    ) { channels, playedRecently ->
+-        listOfNotNull<Recommend.Spec>(
+-            playedRecently?.let { Recommend.CwSpec(it, playerManager.getCwPosition(it.url)) },
+-            *(channels.map { channel -> Recommend.UnseenSpec(channel) }.take(8).toTypedArray())
+-        )
+-    }
++    val specs = unseensDuration
++        .flatMapLatest { channelRepository.observeAllUnseenFavorites(it) }
++        .map { channels ->
++            channels.map { channel -> Recommend.UnseenSpec(channel) }
++                .take(8)
++        }
+         .flowOn(Dispatchers.IO)
+         .stateIn(
+             scope = viewModelScope,
+diff --git a/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/NetworkTuning.kt b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/NetworkTuning.kt
+new file mode 100644
+index 00000000..020e53cb
+--- /dev/null
++++ b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/NetworkTuning.kt
+@@ -0,0 +1,105 @@
++package com.m3u.core.foundation.architecture.preferences
++
++/**
++ * Presets for how much video is downloaded ahead of time.
++ * A bigger buffer rides out longer connection drops, but starts slower.
++ */
++@Target(
++    AnnotationTarget.CLASS,
++    AnnotationTarget.PROPERTY,
++    AnnotationTarget.VALUE_PARAMETER,
++    AnnotationTarget.TYPE
++)
++@Retention(AnnotationRetention.SOURCE)
++annotation class BufferSize {
++    companion object {
++        const val NORMAL = 0
++        const val MEDIUM = 1
++        const val LARGE = 2
++        const val MAX = 3
++
++        val ORDER = intArrayOf(NORMAL, MEDIUM, LARGE, MAX)
++
++        fun next(current: Int): Int =
++            ORDER[(ORDER.indexOf(current) + 1).mod(ORDER.size)]
++
++        /** min, max, buffer-for-playback, buffer-for-playback-after-stall (all in ms) */
++        fun durations(value: Int): IntArray = when (value) {
++            MEDIUM -> intArrayOf(25_000, 60_000, 3_000, 8_000)
++            LARGE -> intArrayOf(40_000, 100_000, 5_000, 12_000)
++            MAX -> intArrayOf(60_000, 150_000, 8_000, 15_000)
++            else -> intArrayOf(10_000, 20_000, 2_000, 5_000)
++        }
++    }
++}
++
++/** How long the app waits for a slow server before giving up. */
++@Target(
++    AnnotationTarget.CLASS,
++    AnnotationTarget.PROPERTY,
++    AnnotationTarget.VALUE_PARAMETER,
++    AnnotationTarget.TYPE
++)
++@Retention(AnnotationRetention.SOURCE)
++annotation class NetworkTimeout {
++    companion object {
++        /** Keep the app's normal client timeouts. */
++        const val DEFAULT = 0
++        const val LONG = 1
++        const val LONGER = 2
++
++        val ORDER = intArrayOf(DEFAULT, LONG, LONGER)
++
++        fun next(current: Int): Int =
++            ORDER[(ORDER.indexOf(current) + 1).mod(ORDER.size)]
++
++        /** connect and read timeouts in seconds, or null to keep the defaults */
++        fun seconds(value: Int): Pair<Long, Long>? = when (value) {
++            LONG -> 20L to 30L
++            LONGER -> 30L to 60L
++            else -> null
++        }
++    }
++}
++
++/** How many times a failed chunk download is retried before an error is shown. */
++@Target(
++    AnnotationTarget.CLASS,
++    AnnotationTarget.PROPERTY,
++    AnnotationTarget.VALUE_PARAMETER,
++    AnnotationTarget.TYPE
++)
++@Retention(AnnotationRetention.SOURCE)
++annotation class RetryCount {
++    companion object {
++        const val DEFAULT = 8
++        const val MORE = 12
++        const val MAX = 20
++
++        val ORDER = intArrayOf(DEFAULT, MORE, MAX)
++
++        fun next(current: Int): Int =
++            ORDER[(ORDER.indexOf(current) + 1).mod(ORDER.size)]
++    }
++}
++
++/** How far behind the live edge live channels are played, in seconds. */
++@Target(
++    AnnotationTarget.CLASS,
++    AnnotationTarget.PROPERTY,
++    AnnotationTarget.VALUE_PARAMETER,
++    AnnotationTarget.TYPE
++)
++@Retention(AnnotationRetention.SOURCE)
++annotation class LiveDelay {
++    companion object {
++        const val DEFAULT = 20
++        const val MORE = 30
++        const val MAX = 45
++
++        val ORDER = intArrayOf(DEFAULT, MORE, MAX)
++
++        fun next(current: Int): Int =
++            ORDER[(ORDER.indexOf(current) + 1).mod(ORDER.size)]
++    }
++}
+diff --git a/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/Preferences.kt b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/Preferences.kt
+index 26defe3d..b9dae1e3 100644
+--- a/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/Preferences.kt
++++ b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/Preferences.kt
+@@ -174,11 +174,17 @@ private val PREFERENCES: Map<Preferences.Key<*>, Any> = buildMap {
+     put(PreferencesKeys.SCREENCAST, false)
+     put(PreferencesKeys.SCREEN_ROTATING, false)
+     put(PreferencesKeys.UNSEENS_MILLISECONDS, UnseensMilliseconds.DAYS_3)
+-    put(PreferencesKeys.RECONNECT_MODE, ReconnectMode.RECONNECT)
++    put(PreferencesKeys.RECONNECT_MODE, ReconnectMode.RETRY)
+     put(PreferencesKeys.COLOR_ARGB, ThemePreference.DEFAULT.argb)
+     put(PreferencesKeys.THEME_STYLE, ThemePreference.DEFAULT.style)
+     put(PreferencesKeys.THEME_PRESET_ID, ThemePreference.DEFAULT.presetId)
+     put(PreferencesKeys.TUNNELING, false)
++    put(PreferencesKeys.VIDEO_QUALITY, VideoQuality.P240)
++    put(PreferencesKeys.BUFFER_SIZE, BufferSize.NORMAL)
++    put(PreferencesKeys.NETWORK_TIMEOUT, NetworkTimeout.DEFAULT)
++    put(PreferencesKeys.RETRY_COUNT, RetryCount.DEFAULT)
++    put(PreferencesKeys.LIVE_DELAY, LiveDelay.DEFAULT)
++    put(PreferencesKeys.SMOOTH_QUALITY_SWITCHING, false)
+     put(PreferencesKeys.CLOCK_MODE, false)
+     put(PreferencesKeys.REMOTE_CONTROL, false)
+     put(PreferencesKeys.SLIDER, false)
+@@ -235,6 +241,12 @@ object PreferencesKeys {
+     val THEME_STYLE = intPreferencesKey("theme-style")
+     val THEME_PRESET_ID = stringPreferencesKey("theme-preset-id")
+     val TUNNELING = booleanPreferencesKey("tunneling")
++    val VIDEO_QUALITY = intPreferencesKey("video-quality")
++    val BUFFER_SIZE = intPreferencesKey("buffer-size")
++    val NETWORK_TIMEOUT = intPreferencesKey("network-timeout")
++    val RETRY_COUNT = intPreferencesKey("retry-count")
++    val LIVE_DELAY = intPreferencesKey("live-delay")
++    val SMOOTH_QUALITY_SWITCHING = booleanPreferencesKey("smooth-quality-switching")
+     val CLOCK_MODE = booleanPreferencesKey("12h-clock-mode")
+     val REMOTE_CONTROL = booleanPreferencesKey("remote-control")
+ 
+diff --git a/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/VideoQuality.kt b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/VideoQuality.kt
+new file mode 100644
+index 00000000..d031ca3f
+--- /dev/null
++++ b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/VideoQuality.kt
+@@ -0,0 +1,39 @@
++package com.m3u.core.foundation.architecture.preferences
++
++@Target(
++    AnnotationTarget.CLASS,
++    AnnotationTarget.PROPERTY,
++    AnnotationTarget.VALUE_PARAMETER,
++    AnnotationTarget.TYPE
++)
++@Retention(AnnotationRetention.SOURCE)
++annotation class VideoQuality {
++    companion object {
++        /** No cap: the player picks the best quality the network allows. */
++        const val AUTO = 0
++
++        // Values are the maximum video height in pixels.
++        const val P240 = 240
++        const val P360 = 360
++        const val P480 = 480
++        const val P720 = 720
++        const val P1080 = 1080
++
++        val ORDER = intArrayOf(AUTO, P1080, P720, P480, P360, P240)
++
++        fun next(current: Int): Int {
++            val index = ORDER.indexOf(current)
++            return ORDER[(index + 1).mod(ORDER.size)]
++        }
++
++        /** Rough bitrate ceiling for each height; null means unlimited. */
++        fun maxBitrate(quality: Int): Int? = when (quality) {
++            P240 -> 300_000
++            P360 -> 700_000
++            P480 -> 1_200_000
++            P720 -> 2_500_000
++            P1080 -> 5_000_000
++            else -> null
++        }
++    }
++}
+diff --git a/data/src/main/java/com/m3u/data/service/PlayerManager.kt b/data/src/main/java/com/m3u/data/service/PlayerManager.kt
+index b4a934c2..21378721 100644
+--- a/data/src/main/java/com/m3u/data/service/PlayerManager.kt
++++ b/data/src/main/java/com/m3u/data/service/PlayerManager.kt
+@@ -47,6 +47,10 @@ interface PlayerManager {
+ 
+     suspend fun recordVideo(uri: Uri)
+ 
++    val isRecording: StateFlow<Boolean>
++    fun startRecording()
++    fun stopRecording()
++
+     val cwPosition: SharedFlow<Long>
+     suspend fun onResetPlayback(channelUrl: String)
+     suspend fun getCwPosition(channelUrl: String): Long
+diff --git a/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt b/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt
+index 64923da1..5beae5e5 100644
+--- a/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt
++++ b/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt
+@@ -13,6 +13,7 @@ import androidx.media3.common.PlaybackException
+ import androidx.media3.common.Player
+ import androidx.media3.common.TrackGroup
+ import androidx.media3.common.TrackSelectionOverride
++import androidx.media3.common.TrackSelectionParameters
+ import androidx.media3.common.Tracks
+ import androidx.media3.common.VideoSize
+ import androidx.media3.datasource.DataSource
+@@ -49,9 +50,12 @@ import androidx.media3.transformer.InAppMp4Muxer
+ import androidx.media3.transformer.TransformationRequest
+ import androidx.media3.transformer.Transformer
+ import com.m3u.core.foundation.architecture.Publisher
++import com.m3u.core.foundation.architecture.preferences.BufferSize
++import com.m3u.core.foundation.architecture.preferences.NetworkTimeout
+ import com.m3u.core.foundation.architecture.preferences.PreferencesKeys
+ import com.m3u.core.foundation.architecture.preferences.ReconnectMode
+ import com.m3u.core.foundation.architecture.preferences.Settings
++import com.m3u.core.foundation.architecture.preferences.VideoQuality
+ import com.m3u.core.foundation.architecture.preferences.get
+ import com.m3u.data.SSLs
+ import com.m3u.data.api.OkhttpClient
+@@ -83,6 +87,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
+ import kotlinx.coroutines.flow.SharingStarted
+ import kotlinx.coroutines.flow.StateFlow
+ import kotlinx.coroutines.flow.collectLatest
++import kotlinx.coroutines.flow.distinctUntilChanged
+ import kotlinx.coroutines.flow.flatMapLatest
+ import kotlinx.coroutines.flow.flow
+ import kotlinx.coroutines.flow.flowOf
+@@ -100,6 +105,7 @@ import timber.log.Timber
+ import java.io.File
+ import java.io.FileOutputStream
+ import java.util.UUID
++import java.util.concurrent.TimeUnit
+ import javax.inject.Inject
+ import kotlin.time.Duration.Companion.seconds
+ import androidx.media3.exoplayer.DefaultLoadControl
+@@ -121,6 +127,17 @@ class PlayerManagerImpl @Inject constructor(
+     private val mainCoroutineScope = CoroutineScope(Dispatchers.Main)
+     private val ioCoroutineScope = CoroutineScope(Dispatchers.IO)
+ 
++    private val streamRecorder = StreamRecorder(context)
++    override val isRecording = streamRecorder.isRecording
++
++    override fun startRecording() {
++        streamRecorder.start()
++    }
++
++    override fun stopRecording() {
++        streamRecorder.stop()
++    }
++
+     private val channelPreferenceProvider = ChannelPreferenceProvider(
+         directory = context.cacheDir.resolve("channel-preferences"),
+         appVersion = publisher.versionCode
+@@ -211,6 +228,19 @@ class PlayerManagerImpl @Inject constructor(
+                 }
+             }
+         }
++        // Apply quality changes immediately, without restarting the channel.
++        mainCoroutineScope.launch {
++            settings.data
++                .map { it[PreferencesKeys.VIDEO_QUALITY] ?: VideoQuality.P240 }
++                .distinctUntilChanged()
++                .collect { quality ->
++                    player.value?.let { activePlayer ->
++                        activePlayer.trackSelectionParameters = activePlayer
++                            .trackSelectionParameters
++                            .withVideoQuality(quality)
++                    }
++                }
++        }
+         mainCoroutineScope.launch {
+             while (true) {
+                 ensureActive()
+@@ -224,6 +254,7 @@ class PlayerManagerImpl @Inject constructor(
+         command: MediaCommand,
+         applyContinueWatching: Boolean
+     ) {
++        streamRecorder.stop() // a new channel ends any recording
+         val generation = providerSessionState.beginGeneration()
+         playbackStateEvent.value = PlaybackStateEvent(
+             generation = generation.value,
+@@ -355,6 +386,14 @@ class PlayerManagerImpl @Inject constructor(
+         if (!providerSessionState.isCurrent(generation)) return
+         val rtmp: Boolean = Url(url).protocol.name == "rtmp"
+         val tunneling = settings[PreferencesKeys.TUNNELING]
++        val tuning = PlaybackTuning(
++            videoQuality = settings[PreferencesKeys.VIDEO_QUALITY],
++            bufferSize = settings[PreferencesKeys.BUFFER_SIZE],
++            networkTimeout = settings[PreferencesKeys.NETWORK_TIMEOUT],
++            retryCount = settings[PreferencesKeys.RETRY_COUNT],
++            liveDelaySeconds = settings[PreferencesKeys.LIVE_DELAY],
++            smoothQualitySwitching = settings[PreferencesKeys.SMOOTH_QUALITY_SWITCHING],
++        )
+ 
+         val mimeType = when (val chain = chain) {
+             is MimetypeChain.Remembered -> chain.mimeType
+@@ -390,6 +429,7 @@ class PlayerManagerImpl @Inject constructor(
+                 requestHeaders = requestHeaders,
+                 providerPlayback = providerPlayback,
+                 providerPlaybackAllowsCrossOrigin = providerPlaybackAllowsCrossOrigin,
++                networkTimeout = tuning.networkTimeout,
+             )
+         }
+         val extractorsFactory = DefaultExtractorsFactory().setTsExtractorFlags(
+@@ -397,12 +437,14 @@ class PlayerManagerImpl @Inject constructor(
+         )
+         val mediaExtractor = MediaExtractorCompat(extractorsFactory, dataSourceFactory)
+         val mediaSourceFactory = when (mimeType) {
+-            MimeTypes.APPLICATION_M3U8 -> HlsMediaSource.Factory(dataSourceFactory)
+-                .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(8))
++            MimeTypes.APPLICATION_M3U8 -> HlsMediaSource.Factory(
++                RecordingHlsDataSourceFactory(dataSourceFactory, streamRecorder)
++            )
++                .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(tuning.retryCount))
+                 .setExtractorFactory(DefaultHlsExtractorFactory())
+ 
+             MimeTypes.APPLICATION_SS -> ProgressiveMediaSource.Factory(
+-                dataSourceFactory,
++                RecordingDataSourceFactory(dataSourceFactory, streamRecorder),
+                 extractorsFactory
+             )
+ 
+@@ -411,7 +453,14 @@ class PlayerManagerImpl @Inject constructor(
+                 .setForceUseRtpTcp(true)
+                 .setSocketFactory(SSLs.TLSTrustAll.socketFactory)
+ 
+-            else -> DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
++            else -> DefaultMediaSourceFactory(
++                if (mimeType == MimeTypes.APPLICATION_MPD || url.contains(".m3u8", ignoreCase = true)) {
++                    dataSourceFactory // playlists/manifests: not recordable here
++                } else {
++                    RecordingDataSourceFactory(dataSourceFactory, streamRecorder)
++                },
++                extractorsFactory
++            )
+         }
+         timber.d("media-source-factory: ${mediaSourceFactory::class.qualifiedName}")
+         if (licenseType.isNotEmpty()) {
+@@ -449,7 +498,7 @@ class PlayerManagerImpl @Inject constructor(
+             .setUri(url)
+             .setLiveConfiguration(
+                 MediaItem.LiveConfiguration.Builder()
+-                    .setTargetOffsetMs(20_000L)
++                    .setTargetOffsetMs(tuning.liveDelaySeconds * 1_000L)
+                     .build()
+             )
+             .build()
+@@ -460,6 +509,7 @@ class PlayerManagerImpl @Inject constructor(
+             mediaSource = mediaSource,
+             mediaExtractor = mediaExtractor,
+             tunneling = tunneling,
++            tuning = tuning,
+         ) ?: return
+         mainCoroutineScope.launch {
+             if (!providerSessionState.isCurrent(generation)) return@launch
+@@ -522,6 +572,7 @@ class PlayerManagerImpl @Inject constructor(
+     }
+ 
+     private fun releasePlayer() {
++        streamRecorder.stop()
+         synchronized(playerLifecycleLock) {
+             extractor = null
+             activeRequestHeaders = emptyMap()
+@@ -622,17 +673,13 @@ class PlayerManagerImpl @Inject constructor(
+     private fun createPlayer(
+         mediaSourceFactory: MediaSource.Factory,
+         tunneling: Boolean,
++        tuning: PlaybackTuning,
+         listener: Player.Listener,
+     ): ExoPlayer = ExoPlayer.Builder(context)
+         .setMediaSourceFactory(mediaSourceFactory)
+         .setRenderersFactory(renderersFactory)
+-        .setTrackSelector(createTrackSelector(tunneling))
+-        .setLoadControl(
+-            DefaultLoadControl.Builder()
+-                .setBufferDurationsMs(10_000, 20_000, 2_000, 5_000)
+-                .setBackBuffer(0, false)
+-                .build()
+-        )
++        .setTrackSelector(createTrackSelector(tunneling, tuning))
++        .setLoadControl(createLoadControl(tuning.bufferSize))
+         .setHandleAudioBecomingNoisy(true)
+         .build()
+         .apply {
+@@ -651,6 +698,7 @@ class PlayerManagerImpl @Inject constructor(
+         mediaSource: MediaSource,
+         mediaExtractor: MediaExtractorCompat,
+         tunneling: Boolean,
++        tuning: PlaybackTuning,
+     ): ExoPlayer? {
+         var result: ExoPlayer? = null
+         providerSessionState.runIfCurrent(generation) {
+@@ -660,6 +708,7 @@ class PlayerManagerImpl @Inject constructor(
+                     createPlayer(
+                         mediaSourceFactory = mediaSourceFactory,
+                         tunneling = tunneling,
++                        tuning = tuning,
+                         listener = listener,
+                     ).also { createdPlayer ->
+                         timber.d("player instance updated")
+@@ -706,20 +755,34 @@ class PlayerManagerImpl @Inject constructor(
+         Codecs.createRenderersFactory(context)
+     }
+ 
+-   private fun createTrackSelector(tunneling: Boolean): TrackSelector {
+-    val adaptiveFactory = AdaptiveTrackSelection.Factory(
+-        20_000, 25_000, 25_000, 0.65f
+-    )
+-    return DefaultTrackSelector(context, adaptiveFactory).apply {
+-        setParameters(
+-            buildUponParameters()
+-                .setMaxVideoSize(Int.MAX_VALUE, 240)
+-                .setMaxVideoBitrate(300_000)
+-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+-                .setTunnelingEnabled(tunneling)
+-        )
++    private fun createLoadControl(bufferSize: Int): DefaultLoadControl {
++        val (min, max, forPlayback, afterStall) = BufferSize.durations(bufferSize)
++        return DefaultLoadControl.Builder()
++            .setBufferDurationsMs(min, max, forPlayback, afterStall)
++            .setPrioritizeTimeOverSizeThresholds(true)
++            .setBackBuffer(0, false)
++            .build()
++    }
++
++    private fun createTrackSelector(
++        tunneling: Boolean,
++        tuning: PlaybackTuning,
++    ): TrackSelector {
++        val adaptiveFactory = if (tuning.smoothQualitySwitching) {
++            // Go up slowly, come down quickly, trust less of the measured bandwidth.
++            AdaptiveTrackSelection.Factory(20_000, 8_000, 25_000, 0.6f)
++        } else {
++            AdaptiveTrackSelection.Factory(20_000, 25_000, 25_000, 0.65f)
++        }
++        return DefaultTrackSelector(context, adaptiveFactory).apply {
++            setParameters(
++                buildUponParameters()
++                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
++                    .setTunnelingEnabled(tunneling)
++                    .also { it.applyVideoQuality(tuning.videoQuality) }
++            )
++        }
+     }
+-}
+ 
+     private fun createHttpDataSourceFactory(
+         url: String,
+@@ -727,8 +790,9 @@ class PlayerManagerImpl @Inject constructor(
+         requestHeaders: Map<String, String>,
+         providerPlayback: Boolean,
+         providerPlaybackAllowsCrossOrigin: Boolean,
++        networkTimeout: Int,
+     ): DataSource.Factory {
+-        val client = if (providerPlayback) {
++        val baseClient = if (providerPlayback) {
+             providerOkHttpClient.withProviderPlaybackHeaders(
+                 entryUrl = url,
+                 headers = requestHeaders,
+@@ -737,6 +801,15 @@ class PlayerManagerImpl @Inject constructor(
+         } else {
+             okHttpClient
+         }
++        val client = NetworkTimeout.seconds(networkTimeout)
++            ?.let { (connect, read) ->
++                // Slow networks need more time to connect and to deliver each chunk.
++                baseClient.newBuilder()
++                    .connectTimeout(connect, TimeUnit.SECONDS)
++                    .readTimeout(read, TimeUnit.SECONDS)
++                    .build()
++            }
++            ?: baseClient
+         val upstream = OkHttpDataSource.Factory(client)
+             .setUserAgent(userAgent)
+         if (!providerPlayback) {
+@@ -780,6 +853,35 @@ class PlayerManagerImpl @Inject constructor(
+         }
+     }
+ 
++    // "Only when failed": when playback fails (not when it ends), try again a few times.
++    @Volatile
++    private var failureReconnectAttempts = 0
++
++    @Volatile
++    private var failureReconnectUrl = ""
++
++    private fun reconnectAfterFailure(generation: Long) {
++        mainCoroutineScope.launch {
++            val mode = settings[PreferencesKeys.RECONNECT_MODE]
++            if (mode != ReconnectMode.RETRY && mode != ReconnectMode.RECONNECT) return@launch
++            val url = chain.url
++            if (url != failureReconnectUrl) {
++                failureReconnectUrl = url
++                failureReconnectAttempts = 0
++            }
++            if (failureReconnectAttempts >= 5) return@launch
++            failureReconnectAttempts++
++            val command = mediaCommand.value
++            delay(3_000L * failureReconnectAttempts) // wait longer after each failure
++            val replayGeneration = providerSessionState.beginGenerationIfCurrent(generation)
++                ?: return@launch
++            replay(
++                generation = replayGeneration,
++                command = command,
++            )
++        }
++    }
++
+     private fun handlePlayerErrorChanged(
+         generation: Long,
+         exception: PlaybackException?,
+@@ -844,6 +946,7 @@ class PlayerManagerImpl @Inject constructor(
+                         generation = generation,
+                         reason = ProviderPlaybackCloseReason.PLAYBACK_FAILED,
+                     )
++                    reconnectAfterFailure(generation)
+                 }
+ 
+                 else -> {
+@@ -853,6 +956,7 @@ class PlayerManagerImpl @Inject constructor(
+                             generation = generation,
+                             reason = ProviderPlaybackCloseReason.PLAYBACK_FAILED,
+                         )
++                        reconnectAfterFailure(generation)
+                     }
+                     playbackException.value = exception
+                 }
+@@ -875,6 +979,7 @@ class PlayerManagerImpl @Inject constructor(
+     ) {
+         providerSessionState.runIfCurrent(generation) {
+             this.isPlaying.value = isPlaying
++            if (isPlaying) failureReconnectAttempts = 0
+         }
+     }
+ 
+@@ -1198,6 +1303,38 @@ class PlayerManagerImpl @Inject constructor(
+     }
+ }
+ 
++/** Playback options chosen by the user in Settings. */
++private data class PlaybackTuning(
++    val videoQuality: Int,
++    val bufferSize: Int,
++    val networkTimeout: Int,
++    val retryCount: Int,
++    val liveDelaySeconds: Int,
++    val smoothQualitySwitching: Boolean,
++)
++
++/**
++ * Applies the user's video quality choice. [VideoQuality.AUTO] removes every cap.
++ * A video track picked manually from the player menu is cleared so the new
++ * quality takes effect.
++ */
++private fun TrackSelectionParameters.Builder.applyVideoQuality(
++    quality: Int
++): TrackSelectionParameters.Builder {
++    clearOverridesOfType(C.TRACK_TYPE_VIDEO)
++    if (quality == VideoQuality.AUTO) {
++        clearVideoSizeConstraints()
++        setMaxVideoBitrate(Int.MAX_VALUE)
++    } else {
++        setMaxVideoSize(Int.MAX_VALUE, quality)
++        setMaxVideoBitrate(VideoQuality.maxBitrate(quality) ?: Int.MAX_VALUE)
++    }
++    return this
++}
++
++private fun TrackSelectionParameters.withVideoQuality(quality: Int): TrackSelectionParameters =
++    buildUpon().applyVideoQuality(quality).build()
++
+ fun VideoSize.toRect(): Rect {
+     return Rect(0, 0, width, height)
+ }
+diff --git a/data/src/main/java/com/m3u/data/service/internal/StreamRecorder.kt b/data/src/main/java/com/m3u/data/service/internal/StreamRecorder.kt
+new file mode 100644
+index 00000000..3367c897
+--- /dev/null
++++ b/data/src/main/java/com/m3u/data/service/internal/StreamRecorder.kt
+@@ -0,0 +1,125 @@
++package com.m3u.data.service.internal
++
++import android.content.Context
++import android.net.Uri
++import androidx.media3.common.C
++import androidx.media3.datasource.DataSink
++import androidx.media3.datasource.DataSource
++import androidx.media3.datasource.DataSpec
++import androidx.media3.datasource.TeeDataSource
++import androidx.media3.exoplayer.hls.HlsDataSourceFactory
++import kotlinx.coroutines.flow.MutableStateFlow
++import java.io.BufferedOutputStream
++import java.io.IOException
++import java.io.OutputStream
++
++/**
++ * Saves the raw bytes of the stream the player is already downloading.
++ * There is no second download and no re-encoding, so recording costs no extra data.
++ */
++internal class StreamRecorder(private val context: Context) {
++    private val lock = Any()
++    private var output: OutputStream? = null
++
++    val isRecording = MutableStateFlow(false)
++
++    fun start(): Boolean {
++        stop()
++        return try {
++            // Android 10+ supports writing directly to the public Downloads folder
++            // through MediaStore, without a storage permission or folder picker.
++            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
++                return false
++            }
++
++            val values = android.content.ContentValues().apply {
++                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME,
++                    "recording-${System.currentTimeMillis()}.ts")
++                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "video/mp2t")
++                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH,
++                    "${android.os.Environment.DIRECTORY_DOWNLOADS}/m3u")
++            }
++            val uri = context.contentResolver.insert(
++                android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI,
++                values
++            ) ?: return false
++
++            val stream = context.contentResolver.openOutputStream(uri, "w")
++            if (stream == null) {
++                context.contentResolver.delete(uri, null, null)
++                return false
++            }
++
++            synchronized(lock) {
++                output = BufferedOutputStream(stream, 64 * 1024)
++            }
++            isRecording.value = true
++            true
++        } catch (e: Exception) {
++            false
++        }
++    }
++
++    fun stop() {
++        synchronized(lock) {
++            try {
++                output?.flush()
++                output?.close()
++            } catch (_: IOException) {
++            }
++            output = null
++        }
++        isRecording.value = false
++    }
++
++    fun write(buffer: ByteArray, offset: Int, length: Int) {
++        synchronized(lock) {
++            val stream = output ?: return
++            try {
++                stream.write(buffer, offset, length)
++            } catch (_: IOException) {
++                // Disk full or file gone: stop quietly instead of breaking playback.
++                try {
++                    stream.close()
++                } catch (_: IOException) {
++                }
++                output = null
++                isRecording.value = false
++            }
++        }
++    }
++}
++
++private class RecordingDataSink(private val recorder: StreamRecorder) : DataSink {
++    override fun open(dataSpec: DataSpec) {}
++
++    override fun write(buffer: ByteArray, offset: Int, length: Int) {
++        recorder.write(buffer, offset, length)
++    }
++
++    override fun close() {}
++}
++
++/** For plain (non-HLS) streams such as a direct .ts link. */
++internal class RecordingDataSourceFactory(
++    private val upstream: DataSource.Factory,
++    private val recorder: StreamRecorder,
++) : DataSource.Factory {
++    override fun createDataSource(): DataSource =
++        TeeDataSource(upstream.createDataSource(), RecordingDataSink(recorder))
++}
++
++/** For HLS: only the video segments are recorded, not playlists or keys. */
++internal class RecordingHlsDataSourceFactory(
++    private val upstream: DataSource.Factory,
++    private val recorder: StreamRecorder,
++) : HlsDataSourceFactory {
++    override fun createDataSource(dataType: Int): DataSource {
++        val source = upstream.createDataSource()
++        return if (dataType == C.DATA_TYPE_MEDIA) {
++            TeeDataSource(source, RecordingDataSink(recorder))
++        } else {
++            source
++        }
++    }
++}
+diff --git a/i18n/src/main/res/values/feat_setting.xml b/i18n/src/main/res/values/feat_setting.xml
+index af9b4cdb..8d37f54b 100644
+--- a/i18n/src/main/res/values/feat_setting.xml
++++ b/i18n/src/main/res/values/feat_setting.xml
+@@ -151,6 +151,21 @@
+     <string name="feat_setting_theme_ink">Ink</string>
+     <string name="feat_setting_tunneling">tunneling mode</string>
+     <string name="feat_setting_tunneling_description">improve playback of 4K/HDR content</string>
++    <string name="feat_setting_video_quality">video quality</string>
++    <string name="feat_setting_video_quality_auto">auto</string>
++    <string name="feat_setting_buffer_size">buffer size</string>
++    <string name="feat_setting_buffer_size_normal">normal</string>
++    <string name="feat_setting_buffer_size_medium">medium</string>
++    <string name="feat_setting_buffer_size_large">large</string>
++    <string name="feat_setting_buffer_size_max">maximum</string>
++    <string name="feat_setting_network_timeout">network timeout</string>
++    <string name="feat_setting_network_timeout_default">default</string>
++    <string name="feat_setting_network_timeout_long">long</string>
++    <string name="feat_setting_network_timeout_longer">longer</string>
++    <string name="feat_setting_retry_count">retry attempts</string>
++    <string name="feat_setting_live_delay">live delay</string>
++    <string name="feat_setting_smooth_quality_switching">smooth quality switching</string>
++    <string name="feat_setting_smooth_quality_switching_description">weak network: raise quality slowly and lower it quickly. Needs streams with several quality levels</string>
+     <string name="feat_setting_label_backup">Back up</string>
+     <string name="feat_setting_label_restore">Restore</string>
+     <string name="feat_setting_canvas_dark">dark</string>
