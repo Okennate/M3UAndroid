@@ -92,26 +92,32 @@ internal fun ChannelGallery(
                 val channelWithProgramme = channels[index]
                 if (channelWithProgramme != null) {
                     val channel = channelWithProgramme.channel
-                    val loadedUrl: Any? by produceState<Any?>(
-                        initialValue = channel.cover,
-                        key1 = channel,
-                    ) {
-                        val default = channel.cover
-                        delay(1200.milliseconds)
-                        val channelUrl = channel.url
-                        val reloaded = currentReloadThumbnail(channelUrl)
-                        if (reloaded == null) {
-                            value = currentSyncThumbnail(channelUrl) ?: default
-                        } else {
-                            value = reloaded
-                            delay(2400.milliseconds)
-                            value = currentSyncThumbnail(channelUrl) ?: default
+                    val cover: Any? = if (noPictureMode) {
+                        // No cover is displayed in this mode, so avoid starting thumbnail work.
+                        channel.cover
+                    } else {
+                        val loadedUrl: Any? by produceState<Any?>(
+                            initialValue = channel.cover,
+                            key1 = channel,
+                        ) {
+                            val default = channel.cover
+                            delay(1200.milliseconds)
+                            val channelUrl = channel.url
+                            val reloaded = currentReloadThumbnail(channelUrl)
+                            if (reloaded == null) {
+                                value = currentSyncThumbnail(channelUrl) ?: default
+                            } else {
+                                value = reloaded
+                                delay(2400.milliseconds)
+                                value = currentSyncThumbnail(channelUrl) ?: default
+                            }
                         }
+                        loadedUrl
                     }
                     ChannelItem(
                         channel = channel,
                         programme = channelWithProgramme.programme,
-                        cover = loadedUrl,
+                        cover = cover,
                         recently = recently,
                         zapping = zapping == channel,
                         isVodOrSeriesPlaylist = isVodOrSeriesPlaylist,
