@@ -77,7 +77,7 @@ class GuideViewModel @Inject constructor(
                             programmes["${channel.playlistUrl}\u0000$relationId"]
                         },
                     )
-                }.filter { item -> item.programme != null }
+                }.filter { item -> !item.channel.hidden && item.programme != null }
             }
         }
         .cachedIn(viewModelScope)
