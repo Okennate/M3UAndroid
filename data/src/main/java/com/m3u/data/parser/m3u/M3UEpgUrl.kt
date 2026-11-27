@@ -7,7 +7,7 @@ import java.io.ByteArrayOutputStream
 private const val MAX_M3U_HEADER_BYTES = 64 * 1024
 
 private val EPG_URL_ATTRIBUTE = Regex(
-    """(?i)(?:^|\\s)(?:x-tvg-url|url-tvg|tvg-url|x-epg-url|epg-url)\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s]+))"""
+    """(?i)(?:^|\s)(?:x-tvg-url|url-tvg|tvg-url|x-epg-url|epg-url)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))"""
 )
 
 /**
@@ -19,8 +19,8 @@ internal fun BufferedInputStream.readM3uEpgUrlsFromHeader(): List<String> {
     val header = ByteArrayOutputStream()
     while (header.size() < MAX_M3U_HEADER_BYTES) {
         val next = read()
-        if (next == -1 || next == '\\n'.code) break
-        if (next != '\\r'.code) header.write(next)
+        if (next == -1 || next == '\n'.code) break
+        if (next != '\r'.code) header.write(next)
     }
     reset()
     return parseM3uEpgUrlsFromHeader(
@@ -33,14 +33,14 @@ internal fun BufferedInputStream.readM3uEpgUrlsFromHeader(): List<String> {
  * A comma-separated value may contain more than one guide URL.
  */
 internal fun parseM3uEpgUrlsFromHeader(header: String): List<String> {
-    val normalizedHeader = header.removePrefix("\\uFEFF")
+    val normalizedHeader = header.removePrefix("\uFEFF")
     return EPG_URL_ATTRIBUTE.findAll(normalizedHeader)
         .flatMap { match ->
             val value = sequenceOf(
                 match.groupValues[1],
                 match.groupValues[2],
                 match.groupValues[3],
-            ).firstOrNull(String::isNotBlank).orEmpty()
+            ).firstOrNull { it.isNotBlank() }.orEmpty()
             value.replace("&amp;", "&")
                 .split(',')
                 .asSequence()
