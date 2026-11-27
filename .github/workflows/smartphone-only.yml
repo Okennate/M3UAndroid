@@ -42,23 +42,8 @@ jobs:
           else
             echo "::warning::DEBUG_KEYSTORE_BASE64 secret not set - APK will get a new signature every build"
           fi
-      - name: Apply record patch
-        run: git apply --verbose record.patch
-        
-      - name: Apply font patch
-        run: git apply --verbose system-font.patch
-        
-      - name: Apply onscreen patch
-        run: git apply --verbose keep-screen-on.patch
-
-      - name: Apply favorite patch
-        run: git apply --verbose continue-watching-to-favourites.patch
-        
-      - name: Apply reconnect patch
-        run: git apply --verbose reconnect.patch
-        
-      - name: Apply quality patch
-        run: git apply --verbose video-quality-and-network-tuning.patch
+      - name: Apply all patches
+        run: git apply --verbose all-in-one.patch
 
       - name: Build smartphone release APK
         run: ./gradlew :app:smartphone:assembleRelease
