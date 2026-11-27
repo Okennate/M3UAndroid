@@ -79,7 +79,8 @@ internal fun GuideRoute(
         ) { index ->
             val item = channels[index] ?: return@items
             val channel = item.channel
-            val programme = item.programme ?: return@items
+            val programme = item.programme
+
             ListItem(
                 modifier = Modifier.clickable {
                     scope.launch {
@@ -103,24 +104,34 @@ internal fun GuideRoute(
                 },
                 supportingContent = {
                     Column {
-                        Text(
-                            text = stringResource(R.string.ui_guide_now),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            text = programme.title,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        if (programme != null) {
+                            Text(
+                                text = stringResource(R.string.ui_guide_now),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            Text(
+                                text = programme.title,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        } else {
+                            Text(
+                                text = stringResource(R.string.ui_guide_no_programme),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 },
                 trailingContent = {
-                    Text(
-                        text = programme.timeRangeLabel(),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (programme != null) {
+                        Text(
+                            text = programme.timeRangeLabel(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 },
             )
             HorizontalDivider()
