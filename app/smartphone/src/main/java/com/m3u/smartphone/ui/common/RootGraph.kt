@@ -11,6 +11,7 @@ import androidx.navigation.compose.composable
 import com.m3u.data.database.model.Playlist
 import com.m3u.smartphone.ui.business.favourite.FavoriteRoute
 import com.m3u.smartphone.ui.business.foryou.ForyouRoute
+import com.m3u.smartphone.ui.business.guide.GuideRoute
 import com.m3u.smartphone.ui.business.setting.SettingRoute
 import com.m3u.smartphone.ui.material.components.Destination
 import com.m3u.smartphone.ui.material.ktx.Edge
@@ -56,6 +57,29 @@ fun NavGraphBuilder.rootGraph(
         exitTransition = { fadeOut() }
     ) {
         FavoriteRoute(
+            navigateToChannel = navigateToChannel,
+            contentPadding = contentPadding,
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (showBottomEdgeBlur) {
+                        Modifier.blurEdge(
+                            edge = Edge.Bottom,
+                            color = MaterialTheme.colorScheme.background,
+                        )
+                    } else {
+                        Modifier
+                    },
+                ),
+        )
+    }
+
+    composable(
+        route = Destination.Guide.name,
+        enterTransition = { fadeIn() },
+        exitTransition = { fadeOut() }
+    ) {
+        GuideRoute(
             navigateToChannel = navigateToChannel,
             contentPadding = contentPadding,
             modifier = Modifier
