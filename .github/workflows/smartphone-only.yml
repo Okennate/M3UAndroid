@@ -56,6 +56,9 @@ jobs:
         
       - name: Apply reconnect patch
         run: git apply --verbose reconnect.patch
+        
+      - name: Apply quality patch
+        run: git apply --verbose video-quality-and-network-tuning.patch
 
       - name: Build smartphone release APK
         run: ./gradlew :app:smartphone:assembleRelease
