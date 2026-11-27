@@ -4,11 +4,9 @@ import android.os.Parcelable
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Collections
-import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Collections
-import androidx.compose.material.icons.rounded.DateRange
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.Immutable
@@ -32,11 +30,6 @@ enum class Destination(
         selectedIcon = Icons.Rounded.Collections,
         unselectedIcon = Icons.Outlined.Collections,
         iconTextId = string.ui_destination_favourite
-    ),
-    Guide(
-        selectedIcon = Icons.Rounded.DateRange,
-        unselectedIcon = Icons.Outlined.DateRange,
-        iconTextId = string.ui_destination_guide
     ),
     Setting(
         selectedIcon = Icons.Rounded.Settings,
