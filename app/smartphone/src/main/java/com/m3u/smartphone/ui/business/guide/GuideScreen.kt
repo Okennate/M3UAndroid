@@ -15,6 +15,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -31,6 +32,7 @@ import com.m3u.i18n.R
 import com.m3u.smartphone.ui.common.helper.LocalHelper
 import com.m3u.smartphone.ui.common.helper.Metadata
 import com.m3u.core.foundation.util.basic.title
+import kotlinx.coroutines.launch
 import java.text.DateFormat
 import java.util.Date
 
@@ -43,6 +45,7 @@ internal fun GuideRoute(
 ) {
     val title = stringResource(R.string.ui_title_guide)
     val helper = LocalHelper.current
+    val scope = rememberCoroutineScope()
     val channels = viewModel.channels.collectAsLazyPagingItems()
 
     LifecycleResumeEffect(title) {
@@ -79,8 +82,10 @@ internal fun GuideRoute(
             val programme = item.programme ?: return@items
             ListItem(
                 modifier = Modifier.clickable {
-                    helper.play(MediaCommand.Common(channel.id))
-                    navigateToChannel()
+                    scope.launch {
+                        helper.play(MediaCommand.Common(channel.id))
+                        navigateToChannel()
+                    }
                 },
                 leadingContent = {
                     Icon(
