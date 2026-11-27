@@ -28,6 +28,7 @@ import com.m3u.data.database.model.ProviderAccount
 import com.m3u.data.database.model.refreshable
 import com.m3u.data.database.model.toMap
 import com.m3u.data.parser.m3u.M3UParser
+import com.m3u.data.parser.m3u.readM3uEpgUrlsFromHeader
 import com.m3u.data.parser.m3u.toChannel
 import com.m3u.data.parser.xtream.XtreamEpisodeInfo
 import com.m3u.data.parser.xtream.XtreamInput
