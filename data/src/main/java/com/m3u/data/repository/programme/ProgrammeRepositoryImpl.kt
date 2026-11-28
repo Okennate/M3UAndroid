@@ -211,12 +211,9 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
                                 )
                             }
 
-                            val staging = stageProgrammes(
+                            val (staging, importedCount) = stageProgrammes(
                                 epgUrl = epgUrl,
                                 allowedChannelIds = allowedChannelIds,
-                                onProgramme = {
-                                    onProgramme(count.incrementAndGet())
-                                },
                             )
                             try {
                                 database.withTransaction {
@@ -230,6 +227,7 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
                                 refreshCache.edit()
                                     .putLong(cacheKey, Clock.System.now().toEpochMilliseconds())
                                     .apply()
+                                onProgramme(count.addAndGet(importedCount))
                             } finally {
                                 staging.close()
                             }
@@ -257,8 +255,7 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
     private suspend fun stageProgrammes(
         epgUrl: String,
         allowedChannelIds: Set<String>,
-        onProgramme: suspend () -> Unit,
-    ): BoundedJsonlRecordStaging<Programme> {
+    ): Pair<BoundedJsonlRecordStaging<Programme>, Int> {
         val staging = BoundedJsonlRecordStaging.create(
             cacheDirectory = File(context.cacheDir, EPG_STAGING_DIRECTORY),
             limits = EPG_STAGING_LIMITS,
@@ -286,7 +283,6 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
                     .collect { programme ->
                         staging.append(programme)
                         acceptedProgrammes++
-                        onProgramme()
                     }
                 currentCoroutineContext().ensureActive()
                 if (acceptedProgrammes == 0) {
@@ -294,7 +290,7 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
                 }
                 staging.seal()
             }
-            staging
+            staging to acceptedProgrammes
         } catch (error: Throwable) {
             staging.close()
             throw error
