@@ -45,6 +45,8 @@ jobs:
       - name: Apply all patches
         run: git apply --verbose all-in-one.patch
 
+      - name: Apply epg
+        run: git apply --verbose epg-fixes.patch
       - name: Build smartphone release APK
         run: ./gradlew :app:smartphone:assembleRelease
 
