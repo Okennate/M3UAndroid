@@ -173,7 +173,7 @@ private val PREFERENCES: Map<Preferences.Key<*>, Any> = buildMap {
     put(PreferencesKeys.VOLUME_GESTURE, false)
     put(PreferencesKeys.SCREENCAST, false)
     put(PreferencesKeys.SCREEN_ROTATING, false)
-    put(PreferencesKeys.UNSEENS_MILLISECONDS, UnseensMilliseconds.DAYS_3)
+    put(PreferencesKeys.UNSEENS_MILLISECONDS, UnseensMilliseconds.NEVER)
     put(PreferencesKeys.RECONNECT_MODE, ReconnectMode.RECONNECT)
     put(PreferencesKeys.COLOR_ARGB, ThemePreference.DEFAULT.argb)
     put(PreferencesKeys.THEME_STYLE, ThemePreference.DEFAULT.style)
