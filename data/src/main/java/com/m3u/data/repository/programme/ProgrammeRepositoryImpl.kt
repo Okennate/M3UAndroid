@@ -185,10 +185,14 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
                             val lastSuccessfulRefresh = refreshCache.getLong(cacheKey, 0L)
                             val hasCachedProgrammes =
                                 programmeDao.getMaxEndByEpgUrl(epgUrl) != null
-                            val cacheIsFresh = lastSuccessfulRefresh > 0L &&
-                                now >= lastSuccessfulRefresh &&
-                                now - lastSuccessfulRefresh < EPG_CACHE_TTL_MILLIS
-                            if (!ignoreCache && hasCachedProgrammes && cacheIsFresh) {
+                            if (
+                                shouldSkipEpgRefresh(
+                                    ignoreCache = ignoreCache,
+                                    hasCachedProgrammes = hasCachedProgrammes,
+                                    lastSuccessfulRefresh = lastSuccessfulRefresh,
+                                    now = now,
+                                )
+                            ) {
                                 timber.d("EPG refresh skipped because its last successful import is fresh")
                                 return@withExclusive true
                             }
@@ -354,7 +358,6 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
 
     private companion object {
         const val EPG_REFRESH_CACHE = "epg-refresh-cache"
-        const val EPG_CACHE_TTL_MILLIS = 6 * 60 * 60 * 1000L
         const val EPG_INSERT_BATCH_SIZE = 1_000
         const val EPG_STAGING_DIRECTORY = "epg-import-staging"
         val EPG_STAGING_LIMITS = BoundedJsonlRecordStaging.Limits(
@@ -368,3 +371,17 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
         }
     }
 }
+
+
+internal const val EPG_CACHE_TTL_MILLIS = 6 * 60 * 60 * 1000L
+
+internal fun shouldSkipEpgRefresh(
+    ignoreCache: Boolean,
+    hasCachedProgrammes: Boolean,
+    lastSuccessfulRefresh: Long,
+    now: Long,
+): Boolean = !ignoreCache &&
+    hasCachedProgrammes &&
+    lastSuccessfulRefresh > 0L &&
+    now >= lastSuccessfulRefresh &&
+    now - lastSuccessfulRefresh < EPG_CACHE_TTL_MILLIS
