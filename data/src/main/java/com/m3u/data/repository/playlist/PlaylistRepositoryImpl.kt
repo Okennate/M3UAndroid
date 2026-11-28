@@ -1229,6 +1229,7 @@ internal class PlaylistRepositoryImpl @Inject constructor(
             is PlaylistRepository.EpgPlaylistUseCase.Check -> useCase.epgUrl
             is PlaylistRepository.EpgPlaylistUseCase.Upgrade -> useCase.epgUrl
         }
+        var shouldRefreshNewEpgSource = false
         PlaylistDataMaintenanceCoordinator.withExclusive {
             EpgDataMaintenanceCoordinator.withExclusive(lockedEpgUrl) epgLock@ {
                 when (useCase) {
@@ -1239,6 +1240,9 @@ internal class PlaylistRepositoryImpl @Inject constructor(
                         ) {
                             return@epgLock
                         }
+                        val ownerPlaylist = playlistDao.get(useCase.playlistUrl)
+                            ?: return@epgLock
+                        val wasAlreadyAttached = useCase.epgUrl in ownerPlaylist.epgUrls
                         playlistDao.updateEpgUrls(useCase.playlistUrl) { epgUrls ->
                             when {
                                 useCase.action && useCase.epgUrl !in epgUrls ->
@@ -1247,6 +1251,7 @@ internal class PlaylistRepositoryImpl @Inject constructor(
                                 else -> epgUrls - useCase.epgUrl
                             }
                         }
+                        shouldRefreshNewEpgSource = useCase.action && !wasAlreadyAttached
                     }
 
                     is PlaylistRepository.EpgPlaylistUseCase.Upgrade -> {
@@ -1261,6 +1266,12 @@ internal class PlaylistRepositoryImpl @Inject constructor(
                     }
                 }
             }
+        }
+
+        // A newly attached source has no reason to wait for the background refresh cycle.
+        // USER refresh bypasses the EPG cache so the guide is populated immediately.
+        if (shouldRefreshNewEpgSource) {
+            refresh(lockedEpgUrl, PlaylistRefreshReason.USER)
         }
     }
 
