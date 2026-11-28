@@ -272,8 +272,8 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
             },
         )
         return try {
+            var acceptedProgrammes = 0
             withContext(Dispatchers.IO) {
-                var acceptedProgrammes = 0
                 downloadProgrammes(epgUrl)
                     .filter { programme ->
                         programme.channel.isNotBlank() && programme.channel in allowedChannelIds
