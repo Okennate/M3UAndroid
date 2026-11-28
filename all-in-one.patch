@@ -1,16 +1,18 @@
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt
-index d49035f..85b3ba1 100644
+index d49035f..acc0286 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt
-@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+@@ -36,6 +36,9 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
  import androidx.compose.material.icons.automirrored.rounded.VolumeUp
  import androidx.compose.material.icons.rounded.Archive
  import androidx.compose.material.icons.rounded.Cast
++import androidx.compose.material.icons.rounded.ClosedCaption
++import androidx.compose.material.icons.rounded.ClosedCaptionOff
 +import androidx.compose.material.icons.rounded.FiberManualRecord
  import androidx.compose.material.icons.rounded.HighQuality
  import androidx.compose.material.icons.rounded.Pause
  import androidx.compose.material.icons.rounded.PictureInPicture
-@@ -45,6 +46,7 @@ import androidx.compose.material.icons.rounded.ScreenRotationAlt
+@@ -45,6 +48,7 @@ import androidx.compose.material.icons.rounded.ScreenRotationAlt
  import androidx.compose.material.icons.rounded.SkipNext
  import androidx.compose.material.icons.rounded.SkipPrevious
  import androidx.compose.material.icons.rounded.Star
@@ -18,7 +20,7 @@ index d49035f..85b3ba1 100644
  import androidx.compose.material.icons.rounded.Unarchive
  import androidx.compose.material3.LocalContentColor
  import androidx.compose.material3.MaterialTheme
-@@ -92,6 +94,7 @@ import com.m3u.core.foundation.ui.thenIf
+@@ -92,6 +96,7 @@ import com.m3u.core.foundation.ui.thenIf
  import com.m3u.core.foundation.util.basic.isNotEmpty
  import com.m3u.data.database.model.AdjacentChannels
  import com.m3u.i18n.R.string
@@ -26,16 +28,41 @@ index d49035f..85b3ba1 100644
  import com.m3u.smartphone.ui.business.channel.components.Paddings
  import com.m3u.smartphone.ui.business.channel.components.MaskTextButton
  import com.m3u.smartphone.ui.business.channel.components.PlayerMask
-@@ -128,6 +131,8 @@ fun ChannelMask(
+@@ -128,6 +133,11 @@ fun ChannelMask(
      isPanelExpanded: Boolean,
      useVertical: Boolean,
      hasTrack: Boolean,
++    hasSubtitles: Boolean,
++    subtitlesOn: Boolean,
++    onToggleSubtitles: () -> Unit,
 +    isRecording: Boolean,
 +    onRecord: () -> Unit,
      cwPosition: Long,
      onResetPlayback: () -> Unit,
      onSpeedUpdated: (Float) -> Unit,
-@@ -320,6 +325,16 @@ fun ChannelMask(
+@@ -311,6 +321,21 @@ fun ChannelMask(
+                     )
+                 }
+ 
++                if (hasSubtitles) {
++                    MaskButton(
++                        state = maskState,
++                        icon = if (subtitlesOn) Icons.Rounded.ClosedCaption
++                        else Icons.Rounded.ClosedCaptionOff,
++                        tint = if (subtitlesOn) MaterialTheme.colorScheme.primary
++                        else Color.Unspecified,
++                        onClick = onToggleSubtitles,
++                        contentDescription = stringResource(
++                            if (subtitlesOn) string.feat_channel_tooltip_subtitles_off
++                            else string.feat_channel_tooltip_subtitles_on
++                        )
++                    )
++                }
++
+                 if (hasTrack) {
+                     MaskButton(
+                         state = maskState,
+@@ -320,6 +345,16 @@ fun ChannelMask(
                      )
                  }
  
@@ -52,7 +79,7 @@ index d49035f..85b3ba1 100644
                  MaskButton(
                      state = maskState,
                      icon = if (currentIsPanelExpanded) Icons.Rounded.Archive
-@@ -456,14 +471,30 @@ fun ChannelMask(
+@@ -456,14 +491,30 @@ fun ChannelMask(
                              overflow = TextOverflow.Ellipsis,
                              modifier = Modifier.basicMarquee()
                          )
@@ -92,10 +119,18 @@ index d49035f..85b3ba1 100644
                      if (playStateDisplayText.isNotEmpty()
                          || exceptionDisplayText.isNotEmpty()
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt
-index 8af5bef..16fc6f5 100644
+index 8af5bef..f6a588a 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt
-@@ -97,6 +97,7 @@ fun ChannelRoute(
+@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.takeOrElse
+ import androidx.compose.ui.util.fastRoundToInt
+ import androidx.core.net.toUri
++import androidx.media3.common.C
+ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+ import androidx.lifecycle.compose.LifecycleResumeEffect
+ import androidx.lifecycle.compose.collectAsStateWithLifecycle
+@@ -97,6 +98,7 @@ fun ChannelRoute(
          rememberPermissionState(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
  
      val playerState: PlayerState by viewModel.playerState.collectAsStateWithLifecycle()
@@ -103,10 +138,28 @@ index 8af5bef..16fc6f5 100644
      val channel by viewModel.channel.collectAsStateWithLifecycle()
      val adjacentChannels by viewModel.adjacentChannels.collectAsStateWithLifecycle()
      val playlist by viewModel.playlist.collectAsStateWithLifecycle()
-@@ -320,6 +321,14 @@ fun ChannelRoute(
+@@ -106,6 +108,8 @@ fun ChannelRoute(
+ 
+     val tracks by viewModel.tracks.collectAsStateWithLifecycle(emptyMap())
+     val selectedFormats by viewModel.currentTracks.collectAsStateWithLifecycle(emptyMap())
++    val textTracks = tracks[C.TRACK_TYPE_TEXT].orEmpty()
++    val subtitlesOn = selectedFormats[C.TRACK_TYPE_TEXT] != null
+ 
+     val volume by viewModel.volume.collectAsStateWithLifecycle()
+     val isSeriesPlaylist by viewModel.isSeriesPlaylist.collectAsStateWithLifecycle(false)
+@@ -320,6 +324,23 @@ fun ChannelRoute(
                  channel = channel,
                  supportsDirectSharing = supportsDirectSharing,
                  hasTrack = tracks.isNotEmpty(),
++                hasSubtitles = textTracks.isNotEmpty(),
++                subtitlesOn = subtitlesOn,
++                onToggleSubtitles = {
++                    if (subtitlesOn) {
++                        viewModel.clearTrack(C.TRACK_TYPE_TEXT)
++                    } else {
++                        textTracks.firstOrNull()?.let(viewModel::chooseTrack)
++                    }
++                },
 +                isRecording = isRecording,
 +                onRecord = {
 +                    if (isRecording) {
@@ -118,19 +171,25 @@ index 8af5bef..16fc6f5 100644
                  isPanelExpanded = isPanelExpanded,
                  brightness = brightness,
                  onBrightness = { brightness = it },
-@@ -393,6 +402,8 @@ private fun ChannelPlayer(
+@@ -393,6 +414,11 @@ private fun ChannelPlayer(
      adjacentChannels: AdjacentChannels?,
      isSeriesPlaylist: Boolean,
      hasTrack: Boolean,
++    hasSubtitles: Boolean,
++    subtitlesOn: Boolean,
++    onToggleSubtitles: () -> Unit,
 +    isRecording: Boolean,
 +    onRecord: () -> Unit,
      isPanelExpanded: Boolean,
      brightness: Float,
      volume: Float,
-@@ -496,6 +507,8 @@ private fun ChannelPlayer(
+@@ -496,6 +522,11 @@ private fun ChannelPlayer(
              supportsDirectSharing = supportsDirectSharing,
              useVertical = useVertical,
              hasTrack = hasTrack,
++            hasSubtitles = hasSubtitles,
++            subtitlesOn = subtitlesOn,
++            onToggleSubtitles = onToggleSubtitles,
 +            isRecording = isRecording,
 +            onRecord = onRecord,
              cwPosition = cwPosition,
@@ -481,10 +540,18 @@ index 80a6801..7dfa62b 100644
  
  fun Typography.withFontFamily(
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt
-index 20362fa..a970539 100644
+index 20362fa..55d8eca 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt
-@@ -29,7 +29,7 @@ data class PlayerState(
+@@ -13,6 +13,7 @@ import androidx.compose.ui.viewinterop.AndroidView
+ import androidx.media3.common.Player
+ import androidx.media3.common.util.UnstableApi
+ import androidx.media3.ui.AspectRatioFrameLayout
++import androidx.media3.ui.CaptionStyleCompat
+ import androidx.media3.ui.PlayerView
+ import com.m3u.core.foundation.architecture.preferences.ClipMode
+ 
+@@ -29,7 +30,7 @@ data class PlayerState(
  fun rememberPlayerState(
      player: Player?,
      @ClipMode clipMode: Int = ClipMode.ADAPTIVE,
@@ -493,6 +560,28 @@ index 20362fa..a970539 100644
  ): PlayerState {
      return remember(
          player,
+@@ -60,6 +61,21 @@ fun Player(
+             PlayerView(context).apply {
+                 useController = false
+                 videoSurfaceView
++                subtitleView?.apply {
++                    // Ignore backgrounds baked into the subtitle file (SSA/ASS, WebVTT, ...)
++                    // and draw plain white text with a dark outline, no box behind it.
++                    setApplyEmbeddedStyles(false)
++                    setStyle(
++                        CaptionStyleCompat(
++                            android.graphics.Color.WHITE,
++                            android.graphics.Color.TRANSPARENT,
++                            android.graphics.Color.TRANSPARENT,
++                            CaptionStyleCompat.EDGE_TYPE_OUTLINE,
++                            android.graphics.Color.BLACK,
++                            null
++                        )
++                    )
++                }
+             }
+         },
+         update = { view ->
 diff --git a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt b/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
 index c411304..1ecae59 100644
 --- a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
@@ -1606,3 +1695,16 @@ index af9b4cd..be0e539 100644
      <string name="feat_setting_label_backup">Back up</string>
      <string name="feat_setting_label_restore">Restore</string>
      <string name="feat_setting_canvas_dark">dark</string>
+diff --git a/i18n/src/main/res/values/feat_stream.xml b/i18n/src/main/res/values/feat_stream.xml
+index 61fe8e4..69ae925 100644
+--- a/i18n/src/main/res/values/feat_stream.xml
++++ b/i18n/src/main/res/values/feat_stream.xml
+@@ -14,6 +14,8 @@
+     <string name="feat_channel_tooltip_cast">cast screen</string>
+     <string name="feat_channel_tooltip_open_panel">open panel</string>
+     <string name="feat_channel_tooltip_enter_pip_mode">PIP mode</string>
++    <string name="feat_channel_tooltip_subtitles_on">turn on subtitles</string>
++    <string name="feat_channel_tooltip_subtitles_off">turn off subtitles</string>
+     <string name="feat_channel_tooltip_screen_rotating">screen rotating</string>
+     <string name="feat_channel_tooltip_choose_format">choose format</string>
+     <string name="feat_channel_track_type_audio">Audio</string>
