@@ -469,7 +469,7 @@ private fun ChannelGalleryItem(
 
     val containerColor =
         if (!isPlaying) Color.Transparent
-        else Color(0xFF163B8F).copy(alpha = 0.35f)
+        else Color(0xFF163B8F).copy(alpha = 0.25f)
         
     val contentColor =
         if (!isPlaying) Color.White.copy(alpha = 0.45f)
