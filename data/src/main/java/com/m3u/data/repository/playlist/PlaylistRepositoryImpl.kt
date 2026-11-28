@@ -582,7 +582,11 @@ internal class PlaylistRepositoryImpl @Inject constructor(
             }
 
             DataSource.EPG -> {
-                SubscriptionWorker.epg(workManager, url, true)
+                SubscriptionWorker.epg(
+                    workManager = workManager,
+                    playlistUrl = url,
+                    ignoreCache = reason == PlaylistRefreshReason.USER,
+                )
             }
 
             DataSource.Xtream -> {
