@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="feat_channel_guide_empty">No programme information is available for this channel. Check the EPG source and channel ID.</string>
     <string name="feat_channel_playback_state_idle">idle</string>
     <string name="feat_channel_playback_state_buffering">buffering</string>
     <string name="feat_channel_playback_state_ready">ready</string>
