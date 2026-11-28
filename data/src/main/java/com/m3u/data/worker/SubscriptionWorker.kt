@@ -154,7 +154,7 @@ class SubscriptionWorker @AssistedInject constructor(
                     // successful download or replace the existing notification.
                     if (total > 0) {
                         createN10nBuilder()
-                            .setContentText(findProgrammeProgressContentText(total))
+                            .setContentText(findCompleteContentText(total))
                             .buildThenNotify()
                     }
                     Result.success()
