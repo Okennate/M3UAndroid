@@ -585,7 +585,7 @@ internal class PlaylistRepositoryImpl @Inject constructor(
                 SubscriptionWorker.epg(
                     workManager = workManager,
                     playlistUrl = url,
-                    ignoreCache = reason == PlaylistRefreshReason.USER,
+                    ignoreCache = reason.ignoreEpgCache,
                 )
             }
 
