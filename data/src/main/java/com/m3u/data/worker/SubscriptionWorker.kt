@@ -134,18 +134,29 @@ class SubscriptionWorker @AssistedInject constructor(
                 val playlistUrl = epgPlaylistUrl ?: return@coroutineScope Result.failure()
                 val ignoreCache = epgIgnoreCache
                 try {
+                    var total = 0
                     programmeRepository.checkOrRefreshProgrammesOrThrow(
                         playlistUrl,
                         ignoreCache = ignoreCache
                     )
                         .onEach { count ->
+                            total = count
                             val notification = createN10nBuilder()
                                 .setContentText(findProgrammeProgressContentText(count))
                                 .setActions(cancelAction)
+                                .setOngoing(true)
                                 .build()
                             notificationManager.notify(notificationId, notification)
                         }
                         .collect()
+
+                    // A cache hit emits no programme counts. Do not report it as a
+                    // successful download or replace the existing notification.
+                    if (total > 0) {
+                        createN10nBuilder()
+                            .setContentText(findCompleteContentText(total))
+                            .buildThenNotify()
+                    }
                     Result.success()
                 } catch (cancelled: CancellationException) {
                     throw cancelled

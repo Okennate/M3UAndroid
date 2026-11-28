@@ -23,9 +23,11 @@ import com.m3u.data.repository.playlist.PlaylistDataMaintenanceCoordinator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPInputStream
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -34,11 +36,13 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -58,6 +62,9 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : ProgrammeRepository {
     private val timber = Timber.tag("ProgrammeRepositoryImpl")
+    private val refreshCache by lazy {
+        context.getSharedPreferences(EPG_REFRESH_CACHE, Context.MODE_PRIVATE)
+    }
     override val refreshingEpgUrls = MutableStateFlow<List<String>>(emptyList())
 
     override fun pagingProgrammes(
@@ -164,52 +171,96 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
         // we call it job -s because we think deferred -s is sick.
         val jobs = epgUrls.map { epgUrl ->
             async {
-                EpgDataMaintenanceCoordinator.withExclusive(epgUrl) {
-                    val stillReferenced = ownerPlaylistUrls.any { playlistUrl ->
-                        playlistDao.get(playlistUrl)
-                            ?.epgUrlsOrXtreamXmlUrl()
-                            ?.contains(epgUrl) == true
-                    }
-                    if (!stillReferenced) return@withExclusive
-                    try {
-                        refreshingEpgUrls.update { refreshing -> refreshing + epgUrl }
-                        val cacheMaxEnd = programmeDao.getMaxEndByEpgUrl(epgUrl)
-                        if (!ignoreCache && cacheMaxEnd != null && cacheMaxEnd > now) run {
-                            timber.d("EPG refresh skipped because cached programmes are valid")
-                            return@withExclusive
+                try {
+                    EpgDataMaintenanceCoordinator.withExclusive(epgUrl) {
+                        val stillReferenced = ownerPlaylistUrls.any { playlistUrl ->
+                            playlistDao.get(playlistUrl)
+                                ?.epgUrlsOrXtreamXmlUrl()
+                                ?.contains(epgUrl) == true
                         }
-
-                        val staging = stageProgrammes(
-                            epgUrl = epgUrl,
-                            onProgramme = {
-                                onProgramme(count.incrementAndGet())
-                            },
-                        )
+                        if (!stillReferenced) return@withExclusive false
                         try {
-                            database.withTransaction {
-                                programmeDao.cleanByEpgUrl(epgUrl)
-                                staging.forEachBatch(EPG_INSERT_BATCH_SIZE) { programmes ->
-                                    programmeDao.insertOrReplaceAll(
-                                        *programmes.toTypedArray()
-                                    )
-                                }
+                            refreshingEpgUrls.update { refreshing -> refreshing + epgUrl }
+                            val cacheKey = refreshCacheKey(epgUrl)
+                            val lastSuccessfulRefresh = refreshCache.getLong(cacheKey, 0L)
+                            val hasCachedProgrammes =
+                                programmeDao.getMaxEndByEpgUrl(epgUrl) != null
+                            if (
+                                shouldSkipEpgRefresh(
+                                    ignoreCache = ignoreCache,
+                                    hasCachedProgrammes = hasCachedProgrammes,
+                                    lastSuccessfulRefresh = lastSuccessfulRefresh,
+                                    now = now,
+                                )
+                            ) {
+                                timber.d("EPG refresh skipped because its last successful import is fresh")
+                                return@withExclusive true
                             }
+
+                            val allowedChannelIds = ownerPlaylistUrls
+                                .filter { playlistUrl ->
+                                    playlistDao.get(playlistUrl)
+                                        ?.epgUrlsOrXtreamXmlUrl()
+                                        ?.contains(epgUrl) == true
+                                }
+                                .flatMap { playlistUrl ->
+                                    channelDao.getByPlaylistUrl(playlistUrl)
+                                        .mapNotNull { channel ->
+                                            channel.relationId?.takeIf(String::isNotBlank)
+                                        }
+                                }
+                                .toSet()
+                            if (allowedChannelIds.isEmpty()) {
+                                throw IOException(
+                                    "No playlist tvg-id values are available for EPG matching"
+                                )
+                            }
+
+                            val (staging, importedCount) = stageProgrammes(
+                                epgUrl = epgUrl,
+                                allowedChannelIds = allowedChannelIds,
+                            )
+                            try {
+                                database.withTransaction {
+                                    programmeDao.cleanByEpgUrl(epgUrl)
+                                    staging.forEachBatch(EPG_INSERT_BATCH_SIZE) { programmes ->
+                                        programmeDao.insertOrReplaceAll(
+                                            *programmes.toTypedArray()
+                                        )
+                                    }
+                                }
+                                refreshCache.edit()
+                                    .putLong(cacheKey, Clock.System.now().toEpochMilliseconds())
+                                    .apply()
+                                onProgramme(count.addAndGet(importedCount))
+                            } finally {
+                                staging.close()
+                            }
+                            true
                         } finally {
-                            staging.close()
+                            refreshingEpgUrls.update { refreshing -> refreshing - epgUrl }
                         }
-                    } finally {
-                        refreshingEpgUrls.update { refreshing -> refreshing - epgUrl }
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    // A failed source must not prevent the next configured EPG
+                    // source from being imported and used as a fallback.
+                    timber.w(error, "EPG source failed: $epgUrl")
+                    false
                 }
             }
         }
-        jobs.awaitAll()
+        val sourceResults = jobs.awaitAll()
+        if (epgUrls.isNotEmpty() && sourceResults.none { it }) {
+            throw IOException("All configured EPG sources failed to import")
+        }
     }
 
     private suspend fun stageProgrammes(
         epgUrl: String,
-        onProgramme: suspend () -> Unit,
-    ): BoundedJsonlRecordStaging<Programme> {
+        allowedChannelIds: Set<String>,
+    ): Pair<BoundedJsonlRecordStaging<Programme>, Int> {
         val staging = BoundedJsonlRecordStaging.create(
             cacheDirectory = File(context.cacheDir, EPG_STAGING_DIRECTORY),
             limits = EPG_STAGING_LIMITS,
@@ -221,17 +272,30 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
             },
         )
         return try {
+            var acceptedProgrammes = 0
             withContext(Dispatchers.IO) {
                 downloadProgrammes(epgUrl)
-                    .map { it.toProgramme(epgUrl) }
+                    .filter { programme ->
+                        programme.channel.isNotBlank() && programme.channel in allowedChannelIds
+                    }
+                    .mapNotNull { source ->
+                        runCatching { source.toProgramme(epgUrl) }
+                            .getOrNull()
+                            ?.takeIf { programme ->
+                                programme.start > 0L && programme.end > programme.start
+                            }
+                    }
                     .collect { programme ->
                         staging.append(programme)
-                        onProgramme()
+                        acceptedProgrammes++
                     }
                 currentCoroutineContext().ensureActive()
+                if (acceptedProgrammes == 0) {
+                    throw IOException("EPG contains no valid programmes matching playlist tvg-id values")
+                }
                 staging.seal()
             }
-            staging
+            staging to acceptedProgrammes
         } catch (error: Throwable) {
             staging.close()
             throw error
@@ -287,7 +351,13 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
         programmeDao.checkEpgUrlIsValid(epgUrl, relationId, range.start, range.end)
     }
 
+    private fun refreshCacheKey(epgUrl: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(epgUrl.toByteArray())
+            .joinToString("") { byte -> "%02x".format(byte) }
+
     private companion object {
+        const val EPG_REFRESH_CACHE = "epg-refresh-cache"
         const val EPG_INSERT_BATCH_SIZE = 1_000
         const val EPG_STAGING_DIRECTORY = "epg-import-staging"
         val EPG_STAGING_LIMITS = BoundedJsonlRecordStaging.Limits(
@@ -301,3 +371,17 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
         }
     }
 }
+
+
+internal const val EPG_CACHE_TTL_MILLIS = 6 * 60 * 60 * 1000L
+
+internal fun shouldSkipEpgRefresh(
+    ignoreCache: Boolean,
+    hasCachedProgrammes: Boolean,
+    lastSuccessfulRefresh: Long,
+    now: Long,
+): Boolean = !ignoreCache &&
+    hasCachedProgrammes &&
+    lastSuccessfulRefresh > 0L &&
+    now >= lastSuccessfulRefresh &&
+    now - lastSuccessfulRefresh < EPG_CACHE_TTL_MILLIS

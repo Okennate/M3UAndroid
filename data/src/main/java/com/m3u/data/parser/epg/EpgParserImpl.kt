@@ -6,53 +6,94 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flowOn
 import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserException
 import java.io.InputStream
 import javax.inject.Inject
 
-internal class EpgParserImpl @Inject constructor(
-) : EpgParser {
+internal class EpgParserImpl @Inject constructor() : EpgParser {
     override fun readProgrammes(input: InputStream): Flow<EpgProgramme> = channelFlow {
-        val parser = Xml.newPullParser()
-        parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
-        parser.setInput(input, null)
-        with(parser) {
-            while (name != "tv") next()
-            while (next() != XmlPullParser.END_TAG) {
-                if (eventType != XmlPullParser.START_TAG) continue
-                when (name) {
-                    "programme" -> {
-                        val programme = readProgramme()
-                        send(programme)
-                    }
+        val parser = Xml.newPullParser().apply {
+            setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+            setInput(input, null)
+        }
 
-                    else -> skip()
+        // Do not silently accept an empty response, HTML error page, or a
+        // document whose root is not XMLTV. Import staging preserves old data
+        // whenever this parser fails.
+        while (parser.eventType != XmlPullParser.START_TAG &&
+            parser.next() != XmlPullParser.END_DOCUMENT
+        ) {
+            // Advance to the document root.
+        }
+        if (parser.eventType != XmlPullParser.START_TAG || parser.name != "tv") {
+            throw XmlPullParserException("Expected XMLTV <tv> root element")
+        }
+
+        var finished = false
+        while (!finished) {
+            when (parser.next()) {
+                XmlPullParser.START_TAG -> {
+                    if (parser.name == "programme") {
+                        // Structural XML errors fail the source rather than
+                        // committing a partially parsed replacement.
+                        send(parser.readProgramme())
+                    } else {
+                        parser.skip()
+                    }
+                }
+
+                XmlPullParser.END_TAG -> {
+                    if (parser.name == "tv") finished = true
+                }
+
+                XmlPullParser.END_DOCUMENT -> {
+                    throw XmlPullParserException("Unexpected end of XMLTV document")
                 }
             }
         }
-    }
-        .flowOn(Dispatchers.Default)
+        // Consume the document tail too, so trailing garbage or a second root
+        // cannot make a malformed feed look like a successful partial import.
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.START_TAG) {
+                throw XmlPullParserException("Unexpected content after XMLTV </tv>")
+            }
+        }
+    }.flowOn(Dispatchers.Default)
 
-    private val ns: String? = null
     private fun XmlPullParser.readProgramme(): EpgProgramme {
-        require(XmlPullParser.START_TAG, ns, "programme")
+        require(XmlPullParser.START_TAG, null, "programme")
         val start = getAttributeValue(null, "start")
         val stop = getAttributeValue(null, "stop")
-        val channel = getAttributeValue(null, "channel")
+        val channel = getAttributeValue(null, "channel").orEmpty()
         var title: String? = null
         var desc: String? = null
         val categories = mutableListOf<String>()
         var icon: String? = null
-        while (next() != XmlPullParser.END_TAG) {
-            if (eventType != XmlPullParser.START_TAG) continue
-            when (name) {
-                "title" -> title = readTitle()
-                "desc" -> desc = readDesc()
-                "category" -> categories += readCategory()
-                "icon" -> icon = readIcon()
-                else -> skip()
+
+        var finished = false
+        while (!finished) {
+            when (next()) {
+                XmlPullParser.START_TAG -> when (name) {
+                    "title" -> title = readTextElement("title")
+                    "desc" -> desc = readTextElement("desc")
+                    "category" -> readTextElement("category")?.let(categories::add)
+                    "icon" -> {
+                        icon = getAttributeValue(null, "src")
+                        skip()
+                    }
+                    else -> skip()
+                }
+
+                XmlPullParser.END_TAG -> {
+                    if (name == "programme") finished = true
+                }
+
+                XmlPullParser.END_DOCUMENT -> {
+                    throw XmlPullParserException("Unexpected end inside XMLTV programme")
+                }
             }
         }
-        require(XmlPullParser.END_TAG, ns, "programme")
+
         return EpgProgramme(
             start = start,
             stop = stop,
@@ -64,56 +105,36 @@ internal class EpgParserImpl @Inject constructor(
         )
     }
 
+    private fun XmlPullParser.readTextElement(elementName: String): String? {
+        require(XmlPullParser.START_TAG, null, elementName)
+        val result = StringBuilder()
+        var depth = 1
+        while (depth > 0) {
+            when (next()) {
+                XmlPullParser.START_TAG -> depth++
+                XmlPullParser.END_TAG -> depth--
+                XmlPullParser.TEXT,
+                XmlPullParser.CDSECT,
+                XmlPullParser.ENTITY_REF -> result.append(text)
+                XmlPullParser.END_DOCUMENT -> {
+                    throw XmlPullParserException("Unexpected end inside XMLTV <$elementName>")
+                }
+            }
+        }
+        return result.toString().trim().takeIf(String::isNotEmpty)
+    }
+
     private fun XmlPullParser.skip() {
         check(eventType == XmlPullParser.START_TAG)
         var depth = 1
-        while (depth != 0) {
+        while (depth > 0) {
             when (next()) {
-                XmlPullParser.END_TAG -> depth--
                 XmlPullParser.START_TAG -> depth++
+                XmlPullParser.END_TAG -> depth--
+                XmlPullParser.END_DOCUMENT -> {
+                    throw XmlPullParserException("Unexpected end while skipping XMLTV element")
+                }
             }
         }
     }
-
-    private fun XmlPullParser.readIcon(): String? = optional {
-        require(XmlPullParser.START_TAG, ns, "icon")
-        val icon = getAttributeValue(null, "src")
-        nextTag()
-        require(XmlPullParser.END_TAG, ns, "icon")
-        return icon
-    }
-
-    private fun XmlPullParser.readTitle(): String? = optional {
-        require(XmlPullParser.START_TAG, ns, "title")
-        val title = readText()
-        require(XmlPullParser.END_TAG, ns, "title")
-        return title
-    }
-
-    private fun XmlPullParser.readDesc(): String? = optional {
-        require(XmlPullParser.START_TAG, ns, "desc")
-        val desc = readText()
-        require(XmlPullParser.END_TAG, ns, "desc")
-        return desc
-    }
-
-    private fun XmlPullParser.readCategory(): String {
-        require(XmlPullParser.START_TAG, ns, "category")
-        val category = readText()
-        require(XmlPullParser.END_TAG, ns, "category")
-        return category
-    }
-
-    private fun XmlPullParser.readText(): String {
-        var result = ""
-        if (next() == XmlPullParser.TEXT) {
-            result = text
-            nextTag()
-        }
-        return result
-    }
-
-    private inline fun optional(block: () -> String): String? =
-        runCatching { block() }
-            .getOrNull()
 }

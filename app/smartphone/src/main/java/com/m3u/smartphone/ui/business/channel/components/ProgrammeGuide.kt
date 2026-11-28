@@ -61,6 +61,7 @@ import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.zIndex
 import androidx.constraintlayout.compose.ConstraintLayout
+import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import com.m3u.core.foundation.architecture.preferences.PreferencesKeys
 import com.m3u.core.foundation.architecture.preferences.preferenceOf
@@ -241,6 +242,20 @@ internal fun ProgramGuide(
                     height = constraints.maxHeight.toFloat()
                 )
             }) {}
+        }
+        if (programmes.itemCount == 0 && programmes.loadState.refresh is LoadState.NotLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(string.feat_channel_guide_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Controls(
             animateToCurrentTimeline = {
