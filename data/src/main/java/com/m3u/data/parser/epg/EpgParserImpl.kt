@@ -100,9 +100,21 @@ internal class EpgParserImpl @Inject constructor() : EpgParser {
 
     private fun XmlPullParser.readTextElement(elementName: String): String? {
         require(XmlPullParser.START_TAG, null, elementName)
-        val value = nextText().trim().takeIf(String::isNotEmpty)
-        require(XmlPullParser.END_TAG, null, elementName)
-        return value
+        val result = StringBuilder()
+        var depth = 1
+        while (depth > 0) {
+            when (next()) {
+                XmlPullParser.START_TAG -> depth++
+                XmlPullParser.END_TAG -> depth--
+                XmlPullParser.TEXT,
+                XmlPullParser.CDSECT,
+                XmlPullParser.ENTITY_REF -> result.append(text)
+                XmlPullParser.END_DOCUMENT -> {
+                    throw XmlPullParserException("Unexpected end inside XMLTV <$elementName>")
+                }
+            }
+        }
+        return result.toString().trim().takeIf(String::isNotEmpty)
     }
 
     private fun XmlPullParser.skip() {
