@@ -51,6 +51,13 @@ internal class EpgParserImpl @Inject constructor() : EpgParser {
                 }
             }
         }
+        // Consume the document tail too, so trailing garbage or a second root
+        // cannot make a malformed feed look like a successful partial import.
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.START_TAG) {
+                throw XmlPullParserException("Unexpected content after XMLTV </tv>")
+            }
+        }
     }.flowOn(Dispatchers.Default)
 
     private fun XmlPullParser.readProgramme(): EpgProgramme {
