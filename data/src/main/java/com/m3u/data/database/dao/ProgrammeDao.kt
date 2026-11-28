@@ -51,8 +51,8 @@ interface ProgrammeDao {
         FROM programmes 
         WHERE epg_url = :epgUrl 
         AND relation_id = :relationId
-        AND start >= :start
-        AND `end` <= :end
+        AND start <= :end
+        AND `end` >= :start
         LIMIT 1
     """)
     suspend fun checkEpgUrlIsValid(
