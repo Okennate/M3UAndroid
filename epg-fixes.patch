@@ -1,0 +1,460 @@
+From aee8d8e28036f9e394e343395919dc86eedaf202 Mon Sep 17 00:00:00 2001
+From: c <c@c>
+Date: Sat, 28 Nov 2026 11:39:51 +0000
+Subject: [PATCH] EPG fixes
+
+---
+ .../com/m3u/smartphone/ui/AppViewModel.kt     |  4 +-
+ .../channel/components/PlayerPanel.kt         |  3 +-
+ .../channel/components/ProgrammeGuide.kt      |  3 +-
+ .../m3u/business/channel/ChannelViewModel.kt  |  5 +-
+ .../com/m3u/data/database/dao/ProgrammeDao.kt | 18 +++++++
+ .../java/com/m3u/data/parser/epg/EpgData.kt   | 51 +++++++++++++-----
+ .../playlist/PlaylistRepositoryImpl.kt        | 18 +++++--
+ .../programme/ProgrammeRepository.kt          |  1 +
+ .../programme/ProgrammeRepositoryImpl.kt      | 53 ++++++++++++++-----
+ .../com/m3u/data/worker/ProgrammeReminder.kt  | 48 +++++++++++++----
+ 10 files changed, 157 insertions(+), 47 deletions(-)
+
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/AppViewModel.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/AppViewModel.kt
+index 0f4865b..e006bc4 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/AppViewModel.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/AppViewModel.kt
+@@ -138,7 +138,9 @@ class AppViewModel @Inject constructor(
+                 SubscriptionWorker.epg(
+                     workManager = workManager,
+                     playlistUrl = playlist.url,
+-                    ignoreCache = true
++                    // Respect the 6h EPG cache on app start; a forced refresh re-downloads and
++                    // re-imports every feed on every launch. Manual sync still ignores the cache.
++                    ignoreCache = false
+                 )
+             }
+         }
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/PlayerPanel.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/PlayerPanel.kt
+index 5b8c07a..d25948b 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/PlayerPanel.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/PlayerPanel.kt
+@@ -75,6 +75,7 @@ import com.m3u.data.database.model.Episode
+ import com.m3u.data.database.model.Programme
+ import com.m3u.data.database.model.ProgrammeRange
+ import com.m3u.data.service.MediaCommand
++import com.m3u.data.worker.ProgrammeReminder
+ import com.m3u.i18n.R.string
+ import com.m3u.smartphone.TimeUtils.formatEOrSh
+ import com.m3u.smartphone.TimeUtils.toEOrSh
+@@ -244,7 +245,7 @@ internal fun PlayerPanel(
+                                 val isReminderShowing = Clock.System.now()
+                                     .toEpochMilliseconds() < currentProgramme.start
+                                 if (isReminderShowing) {
+-                                    val inReminder = currentProgramme.id in programmeReminderIds
++                                    val inReminder = ProgrammeReminder.keyOf(currentProgramme) in programmeReminderIds
+                                     IconButton(
+                                         onClick = {
+                                             if (inReminder) onCancelRemindProgramme(currentProgramme)
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/ProgrammeGuide.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/ProgrammeGuide.kt
+index 930b30e..d9d1577 100644
+--- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/ProgrammeGuide.kt
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/ProgrammeGuide.kt
+@@ -66,6 +66,7 @@ import androidx.paging.compose.LazyPagingItems
+ import com.m3u.core.foundation.architecture.preferences.PreferencesKeys
+ import com.m3u.core.foundation.architecture.preferences.preferenceOf
+ import com.m3u.data.database.model.Programme
++import com.m3u.data.worker.ProgrammeReminder
+ import com.m3u.data.database.model.ProgrammeRange
+ import com.m3u.data.database.model.ProgrammeRange.Companion.HOUR_LENGTH
+ import com.m3u.i18n.R.string
+@@ -208,7 +209,7 @@ internal fun ProgramGuide(
+                 if (programme != null) {
+                     ProgrammeCell(
+                         programme = programme,
+-                        inReminder = programme.id in programmeReminderIds,
++                        inReminder = ProgrammeReminder.keyOf(programme) in programmeReminderIds,
+                         onPressed = { onProgrammePressed(programme) }
+                     )
+                 } else {
+diff --git a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt b/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
+index c411304..a662a86 100644
+--- a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
++++ b/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
+@@ -290,8 +290,7 @@ class ChannelViewModel @Inject constructor(
+     fun onRemindProgramme(programme: Programme) {
+         ProgrammeReminder(
+             workManager = workManager,
+-            programmeId = programme.id,
+-            programmeStart = programme.start
++            programme = programme
+         )
+     }
+ 
+@@ -302,7 +301,7 @@ class ChannelViewModel @Inject constructor(
+                 .getWorkInfos(WorkQuery.fromStates(WorkInfo.State.ENQUEUED))
+                 .get()
+                 .filter { ProgrammeReminder.TAG in it.tags }
+-                .filter { info -> ProgrammeReminder.readProgrammeId(info.tags) == programme.id }
++                .filter { info -> ProgrammeReminder.readProgrammeId(info.tags) == ProgrammeReminder.keyOf(programme) }
+             infos.forEach {
+                 workManager.cancelWorkById(it.id)
+             }
+diff --git a/data/src/main/java/com/m3u/data/database/dao/ProgrammeDao.kt b/data/src/main/java/com/m3u/data/database/dao/ProgrammeDao.kt
+index 7e8d2e6..2a8a053 100644
+--- a/data/src/main/java/com/m3u/data/database/dao/ProgrammeDao.kt
++++ b/data/src/main/java/com/m3u/data/database/dao/ProgrammeDao.kt
+@@ -20,6 +20,24 @@ interface ProgrammeDao {
+     @Query("SELECT * FROM programmes WHERE id = :id")
+     suspend fun getById(id: Int): Programme?
+ 
++    // Programme rows get new auto-generated ids on every EPG import, so anything that has to
++    // survive a refresh (e.g. reminders) must look the programme up by this stable identity.
++    @Query(
++        """
++        SELECT * FROM programmes
++        WHERE epg_url = :epgUrl
++        AND relation_id = :relationId
++        AND start = :start
++        ORDER BY id ASC
++        LIMIT 1
++        """
++    )
++    suspend fun getByKey(
++        epgUrl: String,
++        relationId: String,
++        start: Long
++    ): Programme?
++
+     @Query("""SELECT MAX("end") from programmes WHERE epg_url = :epgUrl""")
+     suspend fun getMaxEndByEpgUrl(epgUrl: String): Long?
+ 
+diff --git a/data/src/main/java/com/m3u/data/parser/epg/EpgData.kt b/data/src/main/java/com/m3u/data/parser/epg/EpgData.kt
+index 73c8c11..610cb83 100644
+--- a/data/src/main/java/com/m3u/data/parser/epg/EpgData.kt
++++ b/data/src/main/java/com/m3u/data/parser/epg/EpgData.kt
+@@ -1,8 +1,8 @@
+ package com.m3u.data.parser.epg
+ 
+ import com.m3u.data.database.model.Programme
+-import java.time.ZonedDateTime
+-import java.time.format.DateTimeFormatterBuilder
++import java.time.LocalDateTime
++import java.time.ZoneOffset
+ 
+ data class EpgProgramme(
+     val channel: String,
+@@ -16,17 +16,44 @@ data class EpgProgramme(
+     val categories: List<String>
+ ) {
+     companion object {
+-        fun readEpochMilliseconds(time: String): Long = ZonedDateTime
+-            .parse(time, EPG_DATE_TIME_FORMATTER)
+-            .toInstant()
+-            .toEpochMilli()
++        /**
++         * Parses an XMLTV timestamp: `YYYYMMDDhhmmss +hhmm`.
++         *
++         * XMLTV allows trailing components to be omitted (`YYYYMMDDhhmm`, `YYYYMMDD`, ...) and the
++         * offset to be missing, in which case UTC is assumed. Real-world feeds also write the
++         * offset without a space (`...+0100`), with a colon (`+01:00`), or as `Z`/`UTC`/`GMT`.
++         */
++        fun readEpochMilliseconds(time: String): Long {
++            val match = EPG_DATE_TIME_REGEX.matchEntire(time.trim())
++                ?: throw IllegalArgumentException("Unsupported XMLTV time: $time")
++            val groups = match.groupValues
++            fun part(index: Int, default: Int): Int =
++                groups[index].takeIf(String::isNotEmpty)?.toInt() ?: default
+ 
+-        private val EPG_DATE_TIME_FORMATTER = DateTimeFormatterBuilder()
+-            .appendPattern("yyyyMMddHHmmss")
+-            .optionalStart()
+-            .appendPattern(" Z")
+-            .optionalEnd()
+-            .toFormatter()
++            val offset = if (groups[8].isEmpty()) {
++                ZoneOffset.UTC
++            } else {
++                val sign = if (groups[8] == "-") -1 else 1
++                ZoneOffset.ofTotalSeconds(sign * (groups[9].toInt() * 3600 + groups[10].toInt() * 60))
++            }
++            return LocalDateTime
++                .of(
++                    part(1, 0),
++                    part(2, 1),
++                    part(3, 1),
++                    part(4, 0),
++                    part(5, 0),
++                    part(6, 0)
++                )
++                .toInstant(offset)
++                .toEpochMilli()
++        }
++
++        // 1:year 2:month 3:day 4:hour 5:minute 6:second 7:Z/UTC/GMT 8:sign 9:hh 10:mm
++        private val EPG_DATE_TIME_REGEX = Regex(
++            """^(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?\s*(?:(Z|UTC|GMT)|([+-])(\d{2}):?(\d{2}))?$""",
++            RegexOption.IGNORE_CASE
++        )
+     }
+ }
+ 
+diff --git a/data/src/main/java/com/m3u/data/repository/playlist/PlaylistRepositoryImpl.kt b/data/src/main/java/com/m3u/data/repository/playlist/PlaylistRepositoryImpl.kt
+index 914009b..3fc8e83 100644
+--- a/data/src/main/java/com/m3u/data/repository/playlist/PlaylistRepositoryImpl.kt
++++ b/data/src/main/java/com/m3u/data/repository/playlist/PlaylistRepositoryImpl.kt
+@@ -1229,7 +1229,7 @@ internal class PlaylistRepositoryImpl @Inject constructor(
+             is PlaylistRepository.EpgPlaylistUseCase.Check -> useCase.epgUrl
+             is PlaylistRepository.EpgPlaylistUseCase.Upgrade -> useCase.epgUrl
+         }
+-        var shouldRefreshNewEpgSource = false
++        var ownerToRefreshAfterAttach: String? = null
+         PlaylistDataMaintenanceCoordinator.withExclusive {
+             EpgDataMaintenanceCoordinator.withExclusive(lockedEpgUrl) epgLock@ {
+                 when (useCase) {
+@@ -1251,7 +1251,9 @@ internal class PlaylistRepositoryImpl @Inject constructor(
+                                 else -> epgUrls - useCase.epgUrl
+                             }
+                         }
+-                        shouldRefreshNewEpgSource = useCase.action && !wasAlreadyAttached
++                        if (useCase.action && !wasAlreadyAttached) {
++                            ownerToRefreshAfterAttach = useCase.playlistUrl
++                        }
+                     }
+ 
+                     is PlaylistRepository.EpgPlaylistUseCase.Upgrade -> {
+@@ -1269,9 +1271,15 @@ internal class PlaylistRepositoryImpl @Inject constructor(
+         }
+ 
+         // A newly attached source has no reason to wait for the background refresh cycle.
+-        // USER refresh bypasses the EPG cache so the guide is populated immediately.
+-        if (shouldRefreshNewEpgSource) {
+-            refresh(lockedEpgUrl, PlaylistRefreshReason.USER)
++        // The EPG worker is keyed by the OWNER playlist (it resolves that playlist's epgUrls);
++        // an EPG source row is not "refreshable", so refresh(epgUrl) would be skipped.
++        // Bypass the cache so the guide is populated immediately.
++        ownerToRefreshAfterAttach?.let { ownerPlaylistUrl ->
++            SubscriptionWorker.epg(
++                workManager = workManager,
++                playlistUrl = ownerPlaylistUrl,
++                ignoreCache = true,
++            )
+         }
+     }
+ 
+diff --git a/data/src/main/java/com/m3u/data/repository/programme/ProgrammeRepository.kt b/data/src/main/java/com/m3u/data/repository/programme/ProgrammeRepository.kt
+index 0dbc0b6..2e0e696 100644
+--- a/data/src/main/java/com/m3u/data/repository/programme/ProgrammeRepository.kt
++++ b/data/src/main/java/com/m3u/data/repository/programme/ProgrammeRepository.kt
+@@ -28,6 +28,7 @@ interface ProgrammeRepository {
+     ): Flow<Int>
+ 
+     suspend fun getById(id: Int): Programme?
++    suspend fun getByKey(epgUrl: String, channelId: String, start: Long): Programme?
+     suspend fun getProgrammeCurrently(channelId: Int): Programme?
+     suspend fun getProgrammesCurrently(playlistUrl: String): Map<String, Programme>
+ }
+diff --git a/data/src/main/java/com/m3u/data/repository/programme/ProgrammeRepositoryImpl.kt b/data/src/main/java/com/m3u/data/repository/programme/ProgrammeRepositoryImpl.kt
+index 1c37fbd..81df1d9 100644
+--- a/data/src/main/java/com/m3u/data/repository/programme/ProgrammeRepositoryImpl.kt
++++ b/data/src/main/java/com/m3u/data/repository/programme/ProgrammeRepositoryImpl.kt
+@@ -36,6 +36,7 @@ import kotlinx.coroutines.ensureActive
+ import kotlinx.coroutines.flow.Flow
+ import kotlinx.coroutines.flow.MutableStateFlow
+ import kotlinx.coroutines.flow.channelFlow
++import kotlinx.coroutines.flow.distinctUntilChanged
+ import kotlinx.coroutines.flow.filter
+ import kotlinx.coroutines.flow.filterNot
+ import kotlinx.coroutines.flow.flatMapLatest
+@@ -70,10 +71,7 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
+     override fun pagingProgrammes(
+         playlistUrl: String,
+         relationId: String
+-    ): Flow<PagingData<Programme>> = playlistDao
+-        .observeByUrl(playlistUrl)
+-        .map { playlist -> playlist?.epgUrlsOrXtreamXmlUrl() ?: emptyList() }
+-        .map { epgUrls -> findValidEpgUrl(epgUrls, relationId, defaultProgrammeRange) }
++    ): Flow<PagingData<Programme>> = observeValidEpgUrl(playlistUrl, relationId)
+         .flatMapLatest { epgUrl ->
+             Pager(PagingConfig(15)) { programmeDao.pagingProgrammes(epgUrl, relationId) }.flow
+         }
+@@ -81,9 +79,7 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
+     override fun observeProgrammeRange(
+         playlistUrl: String,
+         relationId: String
+-    ): Flow<ProgrammeRange> = playlistDao.observeByUrl(playlistUrl)
+-        .map { playlist -> playlist?.epgUrlsOrXtreamXmlUrl() ?: emptyList() }
+-        .map { epgUrls -> findValidEpgUrl(epgUrls, relationId, defaultProgrammeRange) }
++    ): Flow<ProgrammeRange> = observeValidEpgUrl(playlistUrl, relationId)
+         .flatMapLatest { epgUrl ->
+             epgUrl ?: return@flatMapLatest flowOf()
+             programmeDao
+@@ -100,6 +96,25 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
+                 programmeDao.observeProgrammeRange(epgUrls)
+             }
+ 
++    /**
++     * Emits the first EPG url that has programmes for [relationId] around now.
++     *
++     * Re-evaluated whenever the playlist row OR the programmes table changes, so a guide opened
++     * before an import finishes fills in as soon as the import commits. [distinctUntilChanged]
++     * keeps the Pager from being recreated when the chosen url did not change.
++     */
++    private fun observeValidEpgUrl(
++        playlistUrl: String,
++        relationId: String
++    ): Flow<String?> = playlistDao.observeByUrl(playlistUrl)
++        .map { playlist -> playlist?.epgUrlsOrXtreamXmlUrl() ?: emptyList() }
++        .flatMapLatest { epgUrls ->
++            if (epgUrls.isEmpty()) flowOf(epgUrls)
++            else programmeDao.observeProgrammeRange(epgUrls).map { epgUrls }
++        }
++        .map { epgUrls -> findValidEpgUrl(epgUrls, relationId, defaultProgrammeRange) }
++        .distinctUntilChanged()
++
+     private val defaultProgrammeRange: ProgrammeRange
+         get() = with(Clock.System.now()) {
+             ProgrammeRange(
+@@ -131,6 +146,12 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
+ 
+     override suspend fun getById(id: Int): Programme? = programmeDao.getById(id)
+ 
++    override suspend fun getByKey(
++        epgUrl: String,
++        channelId: String,
++        start: Long
++    ): Programme? = programmeDao.getByKey(epgUrl, channelId, start)
++
+     override suspend fun getProgrammeCurrently(channelId: Int): Programme? {
+         val channel = channelDao.get(channelId) ?: return null
+         val relationId = channel.relationId ?: return null
+@@ -197,14 +218,18 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
+                                 return@withExclusive true
+                             }
+ 
+-                            val allowedChannelIds = ownerPlaylistUrls
+-                                .filter { playlistUrl ->
+-                                    playlistDao.get(playlistUrl)
+-                                        ?.epgUrlsOrXtreamXmlUrl()
+-                                        ?.contains(epgUrl) == true
++                            // The import below replaces ALL programmes stored for this EPG URL
++                            // (cleanByEpgUrl), so the channel filter must cover every playlist
++                            // that uses this URL, not only the playlist being refreshed.
++                            // Otherwise refreshing playlist A erases the guide of playlist B.
++                            val allowedChannelIds = playlistDao.getAll()
++                                .filter { playlist ->
++                                    runCatching { playlist.epgUrlsOrXtreamXmlUrl() }
++                                        .getOrDefault(emptyList())
++                                        .contains(epgUrl)
+                                 }
+-                                .flatMap { playlistUrl ->
+-                                    channelDao.getByPlaylistUrl(playlistUrl)
++                                .flatMap { playlist ->
++                                    channelDao.getByPlaylistUrl(playlist.url)
+                                         .mapNotNull { channel ->
+                                             channel.relationId?.takeIf(String::isNotBlank)
+                                         }
+diff --git a/data/src/main/java/com/m3u/data/worker/ProgrammeReminder.kt b/data/src/main/java/com/m3u/data/worker/ProgrammeReminder.kt
+index 9aee389..10f3e3b 100644
+--- a/data/src/main/java/com/m3u/data/worker/ProgrammeReminder.kt
++++ b/data/src/main/java/com/m3u/data/worker/ProgrammeReminder.kt
+@@ -9,16 +9,19 @@ import android.media.RingtoneManager
+ import androidx.core.graphics.drawable.toBitmapOrNull
+ import androidx.hilt.work.HiltWorker
+ import androidx.work.CoroutineWorker
++import androidx.work.ExistingWorkPolicy
+ import androidx.work.OneTimeWorkRequestBuilder
+ import androidx.work.WorkManager
+ import androidx.work.WorkerParameters
+ import androidx.work.workDataOf
+ import com.m3u.data.R
++import com.m3u.data.database.model.Programme
+ import com.m3u.data.repository.media.MediaRepository
+ import com.m3u.data.repository.programme.ProgrammeRepository
+ import com.m3u.i18n.R.string
+ import dagger.assisted.Assisted
+ import dagger.assisted.AssistedInject
++import java.util.Objects
+ import java.util.concurrent.TimeUnit
+ import java.util.concurrent.atomic.AtomicInteger
+ import kotlin.time.Clock
+@@ -32,16 +35,25 @@ class ProgrammeReminder @AssistedInject constructor(
+     private val mediaRepository: MediaRepository
+ ) : CoroutineWorker(context, params) {
+     private val programmeId = inputData.getInt(PROGRAMME_ID, -1)
++    private val epgUrl = inputData.getString(EPG_URL)
++    private val channelId = inputData.getString(CHANNEL_ID_KEY)
++    private val programmeStart = inputData.getLong(PROGRAMME_START, -1L)
+     private val notificationId: Int by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+         ATOMIC_NOTIFICATION_ID.incrementAndGet()
+     }
+ 
+     override suspend fun doWork(): Result {
+         createChannel()
+-        if (programmeId == -1) {
+-            return Result.failure()
++        // Reminders created by this version carry the programme's stable identity, because the
++        // row id changes on every EPG import. Older reminders only have the row id.
++        val found: Programme? = when {
++            epgUrl != null && channelId != null && programmeStart >= 0L ->
++                programmeRepository.getByKey(epgUrl, channelId, programmeStart)
++
++            programmeId != -1 -> programmeRepository.getById(programmeId)
++            else -> null
+         }
+-        val programme = programmeRepository.getById(programmeId) ?: return Result.failure()
++        val programme = found ?: return Result.failure()
+         val drawable = mediaRepository.loadDrawable(programme.icon.orEmpty())
+         val builder = Notification.Builder(context, CHANNEL_ID)
+             .setContentTitle(programme.title)
+@@ -80,6 +92,18 @@ class ProgrammeReminder @AssistedInject constructor(
+     companion object {
+         private const val CHANNEL_ID = "reminder_channel"
+         private const val PROGRAMME_ID = "programme_id"
++        private const val EPG_URL = "epg_url"
++        private const val CHANNEL_ID_KEY = "channel_id"
++        private const val PROGRAMME_START = "programme_start"
++
++        /**
++         * Stable across EPG refreshes (unlike [Programme.id]); used in the work tag and by the
++         * UI to decide whether a programme already has a reminder.
++         */
++        fun keyOf(programme: Programme): Int =
++            Objects.hash(programme.epgUrl, programme.channelId, programme.start)
++
++        // the tag value is [keyOf] for new reminders and the legacy row id for old ones.
+         fun readProgrammeId(tags: Collection<String>): Int? = tags.find {
+             it.startsWith("id=")
+         }
+@@ -91,21 +115,25 @@ class ProgrammeReminder @AssistedInject constructor(
+ 
+         operator fun invoke(
+             workManager: WorkManager,
+-            programmeId: Int,
+-            programmeStart: Long
++            programme: Programme
+         ) {
+             val now = Clock.System.now().toEpochMilliseconds()
+-            if (now > programmeStart) return
++            if (now > programme.start) return
++            val key = keyOf(programme)
+             val data = workDataOf(
+-                PROGRAMME_ID to programmeId
++                PROGRAMME_ID to programme.id,
++                EPG_URL to programme.epgUrl,
++                CHANNEL_ID_KEY to programme.channelId,
++                PROGRAMME_START to programme.start
+             )
+             val request = OneTimeWorkRequestBuilder<ProgrammeReminder>()
+                 .addTag(TAG)
+-                .addTag("id=$programmeId")
++                .addTag("id=$key")
+                 .setInputData(data)
+-                .setInitialDelay(programmeStart - now, TimeUnit.MILLISECONDS)
++                .setInitialDelay(programme.start - now, TimeUnit.MILLISECONDS)
+                 .build()
+-            workManager.enqueue(request)
++            // KEEP: tapping the bell twice must not schedule two notifications.
++            workManager.enqueueUniqueWork("reminder-$key", ExistingWorkPolicy.KEEP, request)
+         }
+     }
+ }
+-- 
+2.43.0
+
