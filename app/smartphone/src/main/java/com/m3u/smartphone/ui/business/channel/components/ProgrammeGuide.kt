@@ -242,6 +242,20 @@ internal fun ProgramGuide(
                 )
             }) {}
         }
+        if (programmes.itemCount == 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surfaceContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(string.feat_channel_guide_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Controls(
             animateToCurrentTimeline = {
                 coroutineScope.launch { animateToCurrentTimeline() }
