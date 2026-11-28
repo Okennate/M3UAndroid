@@ -95,3 +95,6 @@ enum class PlaylistRefreshReason {
     USER,
     BACKGROUND,
 }
+
+internal val PlaylistRefreshReason.ignoreEpgCache: Boolean
+    get() = this == PlaylistRefreshReason.USER
