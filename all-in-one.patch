@@ -1,5 +1,5 @@
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt
-index d49035fb..66870bd8 100644
+index d49035f..66870bd 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelMask.kt
 @@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
@@ -45,10 +45,28 @@ index d49035fb..66870bd8 100644
                      state = maskState,
                      icon = if (currentIsPanelExpanded) Icons.Rounded.Archive
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt
-index 8af5befb..16fc6f5d 100644
+index 8af5bef..016c657 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/ChannelScreen.kt
-@@ -97,6 +97,7 @@ fun ChannelRoute(
+@@ -9,6 +9,8 @@ import androidx.compose.animation.core.animateDpAsState
+ import androidx.compose.foundation.layout.Box
+ import androidx.compose.foundation.layout.fillMaxHeight
+ import androidx.compose.foundation.layout.fillMaxWidth
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.layout.statusBarsPadding
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.automirrored.rounded.VolumeDown
+ import androidx.compose.material.icons.automirrored.rounded.VolumeOff
+@@ -60,6 +62,8 @@ import com.m3u.smartphone.ui.business.channel.components.Paddings
+ import com.m3u.smartphone.ui.business.channel.components.MaskGestureValuePanel
+ import com.m3u.smartphone.ui.business.channel.components.PlayerPanel
+ import com.m3u.smartphone.ui.business.channel.components.VerticalGestureArea
++import com.m3u.smartphone.ui.business.channel.components.VideoQualityBadge
++import com.m3u.smartphone.ui.business.channel.components.rememberVideoQualityLabel
+ import com.m3u.smartphone.ui.common.helper.LocalHelper
+ import com.m3u.smartphone.ui.common.helper.OnPipModeChanged
+ import com.m3u.smartphone.ui.material.components.Player
+@@ -97,6 +101,7 @@ fun ChannelRoute(
          rememberPermissionState(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
  
      val playerState: PlayerState by viewModel.playerState.collectAsStateWithLifecycle()
@@ -56,7 +74,21 @@ index 8af5befb..16fc6f5d 100644
      val channel by viewModel.channel.collectAsStateWithLifecycle()
      val adjacentChannels by viewModel.adjacentChannels.collectAsStateWithLifecycle()
      val playlist by viewModel.playlist.collectAsStateWithLifecycle()
-@@ -320,6 +321,14 @@ fun ChannelRoute(
+@@ -129,6 +134,7 @@ fun ChannelRoute(
+ 
+     val brightnessGesture by preferenceOf(PreferencesKeys.BRIGHTNESS_GESTURE)
+     val volumeGesture by preferenceOf(PreferencesKeys.VOLUME_GESTURE)
++    val showVideoQuality by preferenceOf(PreferencesKeys.SHOW_VIDEO_QUALITY)
+ 
+     val brightnessGestureEnabled by remember { derivedStateOf { isSupportBrightnessGesture && brightnessGesture } }
+     val volumeGestureEnabled by remember { derivedStateOf { volumeGesture } }
+@@ -315,11 +321,20 @@ fun ChannelRoute(
+                 onFavorite = viewModel::onFavorite,
+                 maskState = maskState,
+                 playerState = playerState,
++                showVideoQuality = showVideoQuality && !isPipMode,
+                 playlist = playlist,
+                 adjacentChannels = adjacentChannels,
                  channel = channel,
                  supportsDirectSharing = supportsDirectSharing,
                  hasTrack = tracks.isNotEmpty(),
@@ -71,7 +103,14 @@ index 8af5befb..16fc6f5d 100644
                  isPanelExpanded = isPanelExpanded,
                  brightness = brightness,
                  onBrightness = { brightness = it },
-@@ -393,6 +402,8 @@ private fun ChannelPlayer(
+@@ -387,12 +402,15 @@ fun ChannelRoute(
+ private fun ChannelPlayer(
+     maskState: MaskState,
+     playerState: PlayerState,
++    showVideoQuality: Boolean,
+     playlist: Playlist?,
+     channel: Channel?,
+     supportsDirectSharing: Boolean,
      adjacentChannels: AdjacentChannels?,
      isSeriesPlaylist: Boolean,
      hasTrack: Boolean,
@@ -80,7 +119,7 @@ index 8af5befb..16fc6f5d 100644
      isPanelExpanded: Boolean,
      brightness: Float,
      volume: Float,
-@@ -496,6 +507,8 @@ private fun ChannelPlayer(
+@@ -496,6 +514,8 @@ private fun ChannelPlayer(
              supportsDirectSharing = supportsDirectSharing,
              useVertical = useVertical,
              hasTrack = hasTrack,
@@ -89,8 +128,28 @@ index 8af5befb..16fc6f5d 100644
              cwPosition = cwPosition,
              onResetPlayback = onResetPlayback,
              isPanelExpanded = isPanelExpanded,
+@@ -514,6 +534,19 @@ private fun ChannelPlayer(
+             onPaddingsChanged = onPaddingsChanged
+         )
+ 
++        if (showVideoQuality) {
++            val qualityLabel = rememberVideoQualityLabel(playerState.player)
++            if (qualityLabel != null) {
++                VideoQualityBadge(
++                    label = qualityLabel,
++                    modifier = Modifier
++                        .align(Alignment.TopStart)
++                        .statusBarsPadding()
++                        .padding(8.dp)
++                )
++            }
++        }
++
+         if (gesture != null) {
+             MaskGestureValuePanel(
+                 value = when (gesture) {
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt
-index 1779679c..57610fac 100644
+index 1779679..57610fa 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/PlayerActivity.kt
 @@ -3,6 +3,7 @@ package com.m3u.smartphone.ui.business.channel
@@ -157,8 +216,82 @@ index 1779679c..57610fac 100644
          }
      }
  
+diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/VideoQualityBadge.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/VideoQualityBadge.kt
+new file mode 100644
+index 0000000..2b10280
+--- /dev/null
++++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/channel/components/VideoQualityBadge.kt
+@@ -0,0 +1,68 @@
++package com.m3u.smartphone.ui.business.channel.components
++
++import androidx.compose.foundation.background
++import androidx.compose.foundation.layout.padding
++import androidx.compose.foundation.shape.RoundedCornerShape
++import androidx.compose.material3.MaterialTheme
++import androidx.compose.material3.Text
++import androidx.compose.runtime.Composable
++import androidx.compose.runtime.DisposableEffect
++import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
++import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.unit.dp
++import androidx.media3.common.Player
++import androidx.media3.common.Tracks
++import androidx.media3.common.VideoSize
++import androidx.media3.exoplayer.ExoPlayer
++
++/**
++ * Returns a label such as "240p · 180 kbps" for the video that is currently playing,
++ * or null while nothing has been decoded yet (or for audio-only streams).
++ * The bitrate part is omitted when the stream does not declare one.
++ */
++@Composable
++internal fun rememberVideoQualityLabel(player: Player?): String? {
++    var label by remember(player) { mutableStateOf<String?>(null) }
++    DisposableEffect(player) {
++        if (player == null) {
++            label = null
++            return@DisposableEffect onDispose {}
++        }
++        fun update() {
++            val format = (player as? ExoPlayer)?.videoFormat
++            val height = format?.height?.takeIf { it > 0 }
++                ?: player.videoSize.height.takeIf { it > 0 }
++            val kbps = format?.bitrate?.takeIf { it > 0 }?.div(1000)
++            label = height?.let { h -> "${h}p" + (kbps?.let { k -> " · $k kbps" } ?: "") }
++        }
++
++        val listener = object : Player.Listener {
++            override fun onVideoSizeChanged(videoSize: VideoSize) = update()
++            override fun onTracksChanged(tracks: Tracks) = update()
++        }
++        player.addListener(listener)
++        update()
++        onDispose { player.removeListener(listener) }
++    }
++    return label
++}
++
++@Composable
++internal fun VideoQualityBadge(
++    label: String,
++    modifier: Modifier = Modifier
++) {
++    Text(
++        text = label,
++        color = Color.White,
++        style = MaterialTheme.typography.labelMedium,
++        maxLines = 1,
++        modifier = modifier
++            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
++            .padding(horizontal = 6.dp, vertical = 2.dp)
++    )
++}
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt
-index e00e0dc9..61883d00 100644
+index e00e0dc..61883d0 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/FavouriteScreen.kt
 @@ -70,6 +70,7 @@ fun FavoriteRoute(
@@ -195,7 +328,7 @@ index e00e0dc9..61883d00 100644
          rowCount = actualRowCount,
          onClick = onClickChannel,
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt
-index de941137..6db2f133 100644
+index de94113..6db2f13 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/favourite/components/FavoriteGallery.kt
 @@ -6,15 +6,19 @@ import androidx.compose.foundation.layout.Row
@@ -247,7 +380,7 @@ index de941137..6db2f133 100644
                  count = channels.itemCount,
                  key = channels.itemKey { it.id }
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/setting/fragments/OptionalFragment.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/setting/fragments/OptionalFragment.kt
-index 0d12e028..d0af1c93 100644
+index 0d12e02..8fb6a8e 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/setting/fragments/OptionalFragment.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/business/setting/fragments/OptionalFragment.kt
 @@ -10,6 +10,12 @@ import androidx.compose.material.icons.rounded.AccessTime
@@ -289,10 +422,10 @@ index 0d12e028..d0af1c93 100644
 +            TextPreference(
 +                title = stringResource(string.feat_setting_video_quality).title(),
 +                icon = Icons.Rounded.HighQuality,
-+                trailing = if (videoQuality == VideoQuality.AUTO) {
-+                    stringResource(string.feat_setting_video_quality_auto)
-+                } else {
-+                    "${videoQuality}p"
++                trailing = when (videoQuality) {
++                    VideoQuality.AUTO -> stringResource(string.feat_setting_video_quality_auto)
++                    VideoQuality.LOWEST -> stringResource(string.feat_setting_video_quality_lowest)
++                    else -> "${videoQuality}p"
 +                },
 +                onClick = { videoQuality = VideoQuality.next(videoQuality) }
 +            )
@@ -359,8 +492,25 @@ index 0d12e028..d0af1c93 100644
          item {
              var fullInfoPlayer by mutablePreferenceOf(PreferencesKeys.FULL_INFO_PLAYER)
              SwitchSharedPreference(
+@@ -113,6 +196,16 @@ internal fun OptionalFragment(
+                 onChanged = { volumeGesture = !volumeGesture }
+             )
+         }
++        item {
++            var showVideoQuality by mutablePreferenceOf(PreferencesKeys.SHOW_VIDEO_QUALITY)
++            SwitchSharedPreference(
++                title = string.feat_setting_show_video_quality,
++                content = string.feat_setting_show_video_quality_description,
++                icon = Icons.Rounded.Details,
++                checked = showVideoQuality,
++                onChanged = { showVideoQuality = !showVideoQuality }
++            )
++        }
+         item {
+             var alwaysShowReplay by mutablePreferenceOf(PreferencesKeys.ALWAYS_SHOW_REPLAY)
+             SwitchSharedPreference(
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt
-index 80a68016..7dfa62b9 100644
+index 80a6801..7dfa62b 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/FontFamilies.kt
 @@ -9,9 +9,10 @@ import androidx.compose.ui.text.TextStyle
@@ -378,7 +528,7 @@ index 80a68016..7dfa62b9 100644
  
  fun Typography.withFontFamily(
 diff --git a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt
-index 20362fa7..a970539a 100644
+index 20362fa..a970539 100644
 --- a/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt
 +++ b/app/smartphone/src/main/java/com/m3u/smartphone/ui/material/components/Player.kt
 @@ -29,7 +29,7 @@ data class PlayerState(
@@ -391,7 +541,7 @@ index 20362fa7..a970539a 100644
      return remember(
          player,
 diff --git a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt b/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
-index c4113040..1ecae59d 100644
+index c411304..1ecae59 100644
 --- a/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
 +++ b/business/channel/src/main/java/com/m3u/business/channel/ChannelViewModel.kt
 @@ -267,6 +267,11 @@ class ChannelViewModel @Inject constructor(
@@ -422,7 +572,7 @@ index c4113040..1ecae59d 100644
 +    }
  }
 diff --git a/business/favorite/build.gradle.kts b/business/favorite/build.gradle.kts
-index 336a4852..15529180 100644
+index 336a485..1552918 100644
 --- a/business/favorite/build.gradle.kts
 +++ b/business/favorite/build.gradle.kts
 @@ -18,6 +18,7 @@ android {
@@ -434,7 +584,7 @@ index 336a4852..15529180 100644
      implementation(libs.androidx.core.ktx)
  
 diff --git a/business/favorite/src/main/java/com/m3u/business/favorite/FavouriteViewModel.kt b/business/favorite/src/main/java/com/m3u/business/favorite/FavouriteViewModel.kt
-index fa5543ab..a1ac3cb8 100644
+index fa5543a..a1ac3cb 100644
 --- a/business/favorite/src/main/java/com/m3u/business/favorite/FavouriteViewModel.kt
 +++ b/business/favorite/src/main/java/com/m3u/business/favorite/FavouriteViewModel.kt
 @@ -21,6 +21,7 @@ import com.m3u.core.foundation.wrapper.Resource
@@ -464,7 +614,7 @@ index fa5543ab..a1ac3cb8 100644
          settings.flowOf(PreferencesKeys.ZAPPING_MODE),
          playerManager.channel
 diff --git a/business/foryou/src/main/java/com/m3u/business/foryou/ForyouViewModel.kt b/business/foryou/src/main/java/com/m3u/business/foryou/ForyouViewModel.kt
-index 1d5aeeae..efff5009 100644
+index 1d5aeea..efff500 100644
 --- a/business/foryou/src/main/java/com/m3u/business/foryou/ForyouViewModel.kt
 +++ b/business/foryou/src/main/java/com/m3u/business/foryou/ForyouViewModel.kt
 @@ -92,15 +92,12 @@ class ForyouViewModel @Inject constructor(
@@ -491,7 +641,7 @@ index 1d5aeeae..efff5009 100644
              scope = viewModelScope,
 diff --git a/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/NetworkTuning.kt b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/NetworkTuning.kt
 new file mode 100644
-index 00000000..020e53cb
+index 0000000..020e53c
 --- /dev/null
 +++ b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/NetworkTuning.kt
 @@ -0,0 +1,105 @@
@@ -601,10 +751,10 @@ index 00000000..020e53cb
 +    }
 +}
 diff --git a/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/Preferences.kt b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/Preferences.kt
-index 26defe3d..b9dae1e3 100644
+index 26defe3..b1957ad 100644
 --- a/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/Preferences.kt
 +++ b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/Preferences.kt
-@@ -174,11 +174,17 @@ private val PREFERENCES: Map<Preferences.Key<*>, Any> = buildMap {
+@@ -174,15 +174,22 @@ private val PREFERENCES: Map<Preferences.Key<*>, Any> = buildMap {
      put(PreferencesKeys.SCREENCAST, false)
      put(PreferencesKeys.SCREEN_ROTATING, false)
      put(PreferencesKeys.UNSEENS_MILLISECONDS, UnseensMilliseconds.DAYS_3)
@@ -623,7 +773,12 @@ index 26defe3d..b9dae1e3 100644
      put(PreferencesKeys.CLOCK_MODE, false)
      put(PreferencesKeys.REMOTE_CONTROL, false)
      put(PreferencesKeys.SLIDER, false)
-@@ -235,6 +241,12 @@ object PreferencesKeys {
+     put(PreferencesKeys.ALWAYS_SHOW_REPLAY, false)
++    put(PreferencesKeys.SHOW_VIDEO_QUALITY, false)
+     put(PreferencesKeys.PLAYER_PANEL, true)
+     put(PreferencesKeys.COMPACT_DIMENSION, true)
+     put(PreferencesKeys.EXTERNAL_EXTENSIONS, false)
+@@ -235,11 +242,18 @@ object PreferencesKeys {
      val THEME_STYLE = intPreferencesKey("theme-style")
      val THEME_PRESET_ID = stringPreferencesKey("theme-preset-id")
      val TUNNELING = booleanPreferencesKey("tunneling")
@@ -636,12 +791,18 @@ index 26defe3d..b9dae1e3 100644
      val CLOCK_MODE = booleanPreferencesKey("12h-clock-mode")
      val REMOTE_CONTROL = booleanPreferencesKey("remote-control")
  
+     val SLIDER = booleanPreferencesKey("slider")
+     val ALWAYS_SHOW_REPLAY = booleanPreferencesKey("always-show-replay")
++    val SHOW_VIDEO_QUALITY = booleanPreferencesKey("show-video-quality")
+     val PLAYER_PANEL = booleanPreferencesKey("player_panel")
+ 
+     val COMPACT_DIMENSION = booleanPreferencesKey("compact-dimension")
 diff --git a/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/VideoQuality.kt b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/VideoQuality.kt
 new file mode 100644
-index 00000000..d031ca3f
+index 0000000..088a095
 --- /dev/null
 +++ b/core/foundation/src/main/java/com/m3u/core/foundation/architecture/preferences/VideoQuality.kt
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,42 @@
 +package com.m3u.core.foundation.architecture.preferences
 +
 +@Target(
@@ -663,7 +824,10 @@ index 00000000..d031ca3f
 +        const val P720 = 720
 +        const val P1080 = 1080
 +
-+        val ORDER = intArrayOf(AUTO, P1080, P720, P480, P360, P240)
++        /** Always play the lowest-bitrate track the stream offers (no fixed height cap). */
++        const val LOWEST = -1
++
++        val ORDER = intArrayOf(AUTO, P1080, P720, P480, P360, P240, LOWEST)
 +
 +        fun next(current: Int): Int {
 +            val index = ORDER.indexOf(current)
@@ -682,7 +846,7 @@ index 00000000..d031ca3f
 +    }
 +}
 diff --git a/data/src/main/java/com/m3u/data/service/PlayerManager.kt b/data/src/main/java/com/m3u/data/service/PlayerManager.kt
-index b4a934c2..d4f909ea 100644
+index b4a934c..d4f909e 100644
 --- a/data/src/main/java/com/m3u/data/service/PlayerManager.kt
 +++ b/data/src/main/java/com/m3u/data/service/PlayerManager.kt
 @@ -41,12 +41,17 @@ interface PlayerManager {
@@ -704,7 +868,7 @@ index b4a934c2..d4f909ea 100644
      suspend fun onResetPlayback(channelUrl: String)
      suspend fun getCwPosition(channelUrl: String): Long
 diff --git a/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt b/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt
-index 64923da1..367032d6 100644
+index 64923da..b4bb384 100644
 --- a/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt
 +++ b/data/src/main/java/com/m3u/data/service/internal/PlayerManagerImpl.kt
 @@ -4,6 +4,7 @@ import android.content.Context
@@ -1132,7 +1296,7 @@ index 64923da1..367032d6 100644
          }
      }
  
-@@ -1198,6 +1361,40 @@ class PlayerManagerImpl @Inject constructor(
+@@ -1198,6 +1361,41 @@ class PlayerManagerImpl @Inject constructor(
      }
  }
  
@@ -1157,7 +1321,8 @@ index 64923da1..367032d6 100644
 +    quality: Int
 +): TrackSelectionParameters.Builder {
 +    clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-+    if (quality == VideoQuality.AUTO) {
++    setForceLowestBitrate(quality == VideoQuality.LOWEST)
++    if (quality == VideoQuality.AUTO || quality == VideoQuality.LOWEST) {
 +        clearVideoSizeConstraints()
 +        setMaxVideoBitrate(Int.MAX_VALUE)
 +    } else {
@@ -1175,7 +1340,7 @@ index 64923da1..367032d6 100644
  }
 diff --git a/data/src/main/java/com/m3u/data/service/internal/StreamRecorder.kt b/data/src/main/java/com/m3u/data/service/internal/StreamRecorder.kt
 new file mode 100644
-index 00000000..3367c897
+index 0000000..3367c89
 --- /dev/null
 +++ b/data/src/main/java/com/m3u/data/service/internal/StreamRecorder.kt
 @@ -0,0 +1,125 @@
@@ -1305,15 +1470,16 @@ index 00000000..3367c897
 +    }
 +}
 diff --git a/i18n/src/main/res/values/feat_setting.xml b/i18n/src/main/res/values/feat_setting.xml
-index af9b4cdb..8d37f54b 100644
+index af9b4cd..2f6aceb 100644
 --- a/i18n/src/main/res/values/feat_setting.xml
 +++ b/i18n/src/main/res/values/feat_setting.xml
-@@ -151,6 +151,21 @@
+@@ -151,6 +151,22 @@
      <string name="feat_setting_theme_ink">Ink</string>
      <string name="feat_setting_tunneling">tunneling mode</string>
      <string name="feat_setting_tunneling_description">improve playback of 4K/HDR content</string>
 +    <string name="feat_setting_video_quality">video quality</string>
 +    <string name="feat_setting_video_quality_auto">auto</string>
++    <string name="feat_setting_video_quality_lowest">lowest available</string>
 +    <string name="feat_setting_buffer_size">buffer size</string>
 +    <string name="feat_setting_buffer_size_normal">normal</string>
 +    <string name="feat_setting_buffer_size_medium">medium</string>
@@ -1330,3 +1496,12 @@ index af9b4cdb..8d37f54b 100644
      <string name="feat_setting_label_backup">Back up</string>
      <string name="feat_setting_label_restore">Restore</string>
      <string name="feat_setting_canvas_dark">dark</string>
+@@ -278,6 +294,8 @@
+     <string name="feat_setting_warning_xtream_takes_much_more_time">it may take much more time</string>
+     <string name="feat_setting_back_home">back home</string>
+     <string name="feat_setting_always_replay">always show replay button</string>
++    <string name="feat_setting_show_video_quality">show video quality</string>
++    <string name="feat_setting_show_video_quality_description">display the current resolution and bitrate over the video</string>
+     <string name="feat_setting_player_panel">player panel</string>
+     <string name="feat_setting_player_panel_description">swipe up the player to expand it in portrait mode</string>
+     <string name="feat_setting_cache">cache while playing</string>
