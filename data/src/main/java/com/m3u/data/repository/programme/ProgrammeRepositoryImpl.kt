@@ -23,6 +23,7 @@ import com.m3u.data.repository.playlist.PlaylistDataMaintenanceCoordinator
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.zip.GZIPInputStream
 import javax.inject.Inject
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -58,6 +60,9 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
 ) : ProgrammeRepository {
     private val timber = Timber.tag("ProgrammeRepositoryImpl")
+    private val refreshCache by lazy {
+        context.getSharedPreferences(EPG_REFRESH_CACHE, Context.MODE_PRIVATE)
+    }
     override val refreshingEpgUrls = MutableStateFlow<List<String>>(emptyList())
 
     override fun pagingProgrammes(
@@ -173,14 +178,35 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
                     if (!stillReferenced) return@withExclusive
                     try {
                         refreshingEpgUrls.update { refreshing -> refreshing + epgUrl }
-                        val cacheMaxEnd = programmeDao.getMaxEndByEpgUrl(epgUrl)
-                        if (!ignoreCache && cacheMaxEnd != null && cacheMaxEnd > now) run {
-                            timber.d("EPG refresh skipped because cached programmes are valid")
+                        val cacheKey = refreshCacheKey(epgUrl)
+                        val lastSuccessfulRefresh = refreshCache.getLong(cacheKey, 0L)
+                        val hasCachedProgrammes = programmeDao.getMaxEndByEpgUrl(epgUrl) != null
+                        val cacheIsFresh = lastSuccessfulRefresh > 0L &&
+                            now >= lastSuccessfulRefresh &&
+                            now - lastSuccessfulRefresh < EPG_CACHE_TTL_MILLIS
+                        if (!ignoreCache && hasCachedProgrammes && cacheIsFresh) {
+                            timber.d("EPG refresh skipped because its last successful import is fresh")
                             return@withExclusive
+                        }
+
+                        val allowedChannelIds = ownerPlaylistUrls
+                            .filter { playlistUrl ->
+                                playlistDao.get(playlistUrl)
+                                    ?.epgUrlsOrXtreamXmlUrl()
+                                    ?.contains(epgUrl) == true
+                            }
+                            .flatMap { playlistUrl ->
+                                channelDao.getByPlaylistUrl(playlistUrl)
+                                    .mapNotNull { channel -> channel.relationId?.takeIf(String::isNotBlank) }
+                            }
+                            .toSet()
+                        if (allowedChannelIds.isEmpty()) {
+                            throw IOException("No playlist tvg-id values are available for EPG matching")
                         }
 
                         val staging = stageProgrammes(
                             epgUrl = epgUrl,
+                            allowedChannelIds = allowedChannelIds,
                             onProgramme = {
                                 onProgramme(count.incrementAndGet())
                             },
@@ -194,6 +220,9 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
                                     )
                                 }
                             }
+                            refreshCache.edit()
+                                .putLong(cacheKey, Clock.System.now().toEpochMilliseconds())
+                                .apply()
                         } finally {
                             staging.close()
                         }
@@ -208,6 +237,7 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
 
     private suspend fun stageProgrammes(
         epgUrl: String,
+        allowedChannelIds: Set<String>,
         onProgramme: suspend () -> Unit,
     ): BoundedJsonlRecordStaging<Programme> {
         val staging = BoundedJsonlRecordStaging.create(
@@ -222,13 +252,27 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
         )
         return try {
             withContext(Dispatchers.IO) {
+                var acceptedProgrammes = 0
                 downloadProgrammes(epgUrl)
-                    .map { it.toProgramme(epgUrl) }
+                    .filter { programme ->
+                        programme.channel.isNotBlank() && programme.channel in allowedChannelIds
+                    }
+                    .mapNotNull { source ->
+                        runCatching { source.toProgramme(epgUrl) }
+                            .getOrNull()
+                            ?.takeIf { programme ->
+                                programme.start > 0L && programme.end > programme.start
+                            }
+                    }
                     .collect { programme ->
                         staging.append(programme)
+                        acceptedProgrammes++
                         onProgramme()
                     }
                 currentCoroutineContext().ensureActive()
+                if (acceptedProgrammes == 0) {
+                    throw IOException("EPG contains no valid programmes matching playlist tvg-id values")
+                }
                 staging.seal()
             }
             staging
@@ -287,7 +331,14 @@ internal class ProgrammeRepositoryImpl @Inject constructor(
         programmeDao.checkEpgUrlIsValid(epgUrl, relationId, range.start, range.end)
     }
 
+    private fun refreshCacheKey(epgUrl: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(epgUrl.toByteArray())
+            .joinToString("") { byte -> "%02x".format(byte) }
+
     private companion object {
+        const val EPG_REFRESH_CACHE = "epg-refresh-cache"
+        const val EPG_CACHE_TTL_MILLIS = 6 * 60 * 60 * 1000L
         const val EPG_INSERT_BATCH_SIZE = 1_000
         const val EPG_STAGING_DIRECTORY = "epg-import-staging"
         val EPG_STAGING_LIMITS = BoundedJsonlRecordStaging.Limits(
