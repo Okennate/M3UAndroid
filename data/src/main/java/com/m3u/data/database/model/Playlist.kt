@@ -82,6 +82,14 @@ val Playlist.refreshable: Boolean
             ignoreCase = true
         )
 
+        // EPG subscriptions are downloaded by SubscriptionWorker over HTTP(S).
+        // Local file/content EPG sources are not supported by that worker.
+        DataSource.EPG -> url.startsWithAny(
+            "http://",
+            "https://",
+            ignoreCase = true
+        )
+
         DataSource.Xtream,
         DataSource.Emby,
         DataSource.Jellyfin,
